@@ -1,0 +1,1 @@
+def handle(event): pass
