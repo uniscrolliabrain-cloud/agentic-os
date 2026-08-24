@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Any, Dict, Optional
 from ..kernel.types.ids import new_id
 from datetime import datetime
 from ..kernel.types.time import now_utc
@@ -10,5 +10,6 @@ class Action(BaseModel):
     capability: str
     actor_id: str
     resource_id: Optional[str] = None
-    params: dict = Field(default_factory=dict)
+    params: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=now_utc)
+

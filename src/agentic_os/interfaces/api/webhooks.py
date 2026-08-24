@@ -1,1 +1,5 @@
-def handle_webhook(payload: dict): return payload
+from typing import Any, Dict
+
+def handle_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return payload
+
