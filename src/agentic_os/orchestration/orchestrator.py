@@ -1,9 +1,10 @@
-from __future__ import annotations
-from ..kernel.world.events import EventLog
 from ..kernel.world.replay import replay
+from ..cognition.roles.library import LIBRARY
+
 class Orchestrator:
-    def __init__(self, log: EventLog):
-        self.log = log
-    def tick(self):
-        state = replay(self.log)
-        return state
+def init(self, log):
+self.log = log
+self.current_role = LIBRARY["director"]
+def tick(self):
+state = replay(self.log)
+return {"state": state, "role": self.current_role.name}
