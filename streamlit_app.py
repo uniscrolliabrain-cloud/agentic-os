@@ -18,10 +18,7 @@ st.set_page_config(page_title="Agentic-OS", page_icon="🧠")
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    st.error(
-        "Falta GEMINI_API_KEY en los Secrets de esta app. "
-        "Ve a Settings -> Secrets en Streamlit Cloud y añádela."
-    )
+    st.error("Falta GEMINI_API_KEY en los Secrets de esta app. Ve a Settings -> Secrets en Streamlit Cloud y añádela.")
     st.stop()
 
 if "event_log" not in st.session_state:
@@ -31,10 +28,7 @@ if "llm" not in st.session_state:
     st.session_state.llm = GeminiProvider(api_key=GEMINI_API_KEY, model="gemini-2.0-flash")
 
 if "orchestrator" not in st.session_state:
-    st.session_state.orchestrator = Orchestrator(
-        log=st.session_state.event_log,
-        llm=st.session_state.llm,
-    )
+    st.session_state.orchestrator = Orchestrator(log=st.session_state.event_log, llm=st.session_state.llm)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -48,10 +42,22 @@ for msg in st.session_state.messages:
 
 prompt = st.chat_input("Escribe algo...")
 
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-    with st.chat_message("assistant"):
-        response = model.generate_content(prompt)
-        st.markdown(response.text)
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
+if not prompt:
+    st.stop()
+
+st.session_state.messages.append({"role": "user", "content": prompt})
+with st.chat_message("user"):
+    st.markdown(prompt)
+
+chat_box = st.chat_message("assistant")
+
+try:
+    intent = st.session_state.orchestrator.handle_user_message(prompt)
+    reply = intent.reply_to_user or f"(Propuesta: {intent.kind} sobre {intent.entity_id})"
+except Exception as e:
+    reply = None
+    chat_box.error(f"Error al procesar la propuesta: {e}")
+
+if reply is not None:
+    chat_box.markdown(reply)
+    st.session_state.messages.append({"role": "assistant", "content": reply})
