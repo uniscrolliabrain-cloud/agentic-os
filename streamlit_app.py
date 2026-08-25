@@ -1,19 +1,20 @@
 """
 Agentic-OS · Interfaz de chat (Streamlit)
 
-Versión inicial mínima: solo valida que el despliegue funciona
-y que la conexión con Gemini está bien configurada.
-Todavía NO pasa por el orchestrator/kernel — eso se conecta
-en un paso posterior.
+v2: ya no llama a Gemini directo. El mensaje del usuario pasa por el
+Orchestrator real -> rol 'director' propone una Intent -> se guarda
+como evento auditable. Todavía no hay policy/executor conectados
+(el director solo PROPONE, nada se ejecuta aún).
 """
 
 import streamlit as st
-import google.generativeai as genai
+
+from agentic_os.interfaces.llm.provider import GeminiProvider
+from agentic_os.kernel.world.events import EventLog
+from agentic_os.orchestration.orchestrator import Orchestrator
 
 st.set_page_config(page_title="Agentic-OS", page_icon="🧠")
 
-# --- Configuración desde los Secrets de Streamlit Cloud ---
-# (Settings -> Secrets, nunca desde un archivo del repo)
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
@@ -23,27 +24,33 @@ if not GEMINI_API_KEY:
     )
     st.stop()
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
+if "event_log" not in st.session_state:
+    st.session_state.event_log = EventLog()
 
-st.title("🧠 Agentic-OS")
-st.caption("Fase de validación · sin conexión al kernel todavía")
+if "llm" not in st.session_state:
+    st.session_state.llm = GeminiProvider(api_key=GEMINI_API_KEY, model="gemini-2.0-flash")
 
-# --- Historial de chat en memoria de sesión ---
+if "orchestrator" not in st.session_state:
+    st.session_state.orchestrator = Orchestrator(
+        log=st.session_state.event_log,
+        llm=st.session_state.llm,
+    )
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+st.title("🧠 Agentic-OS")
+st.caption(f"Rol activo: {st.session_state.orchestrator.current_role.name} · eventos en log: {len(st.session_state.event_log)}")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-prompt = st.chat_input("Escribe algo para probar la conexión con Gemini...")
+prompt = st.chat_input("Escribe algo...")
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
-
     with st.chat_message("assistant"):
         response = model.generate_content(prompt)
         st.markdown(response.text)
