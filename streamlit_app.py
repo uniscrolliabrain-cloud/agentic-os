@@ -36,24 +36,30 @@ if "messages" not in st.session_state:
 st.title("🧠 Agentic-OS")
 st.caption(f"Rol activo: {st.session_state.orchestrator.current_role.name} · eventos en log: {len(st.session_state.event_log)}")
 
-# El historial completo se pinta SIEMPRE desde aquí, y solo desde aquí.
+# Historial ya cerrado (mensajes de turnos anteriores)
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 prompt = st.chat_input("Escribe algo...")
 
-if not prompt:
-    st.stop()
+if prompt:
+    # 1. Tu mensaje se pinta AL INSTANTE, antes de llamar a Gemini
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
-st.session_state.messages.append({"role": "user", "content": prompt})
+    # 2. Mientras se espera la respuesta, se ve un indicador de "pensando"
+    with st.chat_message("assistant"):
+        with st.spinner("Pensando..."):
+            try:
+                intent = st.session_state.orchestrator.handle_user_message(prompt)
+                reply = intent.reply_to_user or f"(Propuesta: {intent.kind} sobre {intent.entity_id})"
+            except Exception as e:
+                reply = f"Error al procesar la propuesta: {e}"
+        st.markdown(reply)
 
-try:
-    intent = st.session_state.orchestrator.handle_user_message(prompt)
-    reply = intent.reply_to_user or f"(Propuesta: {intent.kind} sobre {intent.entity_id})"
-except Exception as e:
-    reply = f"Error al procesar la propuesta: {e}"
-
+    st.session_state.messages.append({"role": "assistant", "content": reply})
 st.session_state.messages.append({"role": "assistant", "content": reply})
 
 st.rerun()
