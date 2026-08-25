@@ -36,6 +36,7 @@ if "messages" not in st.session_state:
 st.title("🧠 Agentic-OS")
 st.caption(f"Rol activo: {st.session_state.orchestrator.current_role.name} · eventos en log: {len(st.session_state.event_log)}")
 
+# El historial completo se pinta SIEMPRE desde aquí, y solo desde aquí.
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -46,22 +47,13 @@ if not prompt:
     st.stop()
 
 st.session_state.messages.append({"role": "user", "content": prompt})
-with st.chat_message("user"):
-    st.markdown(prompt)
-
-chat_box = st.chat_message("assistant")
 
 try:
     intent = st.session_state.orchestrator.handle_user_message(prompt)
     reply = intent.reply_to_user or f"(Propuesta: {intent.kind} sobre {intent.entity_id})"
 except Exception as e:
-    reply = None
-    chat_box.error(f"Error al procesar la propuesta: {e}")
+    reply = f"Error al procesar la propuesta: {e}"
 
-if reply is not None:
-    chat_box.markdown(reply)
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+st.session_state.messages.append({"role": "assistant", "content": reply})
 
-if reply is not None:
-    chat_box.markdown(reply)
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+st.rerun()
