@@ -25,7 +25,7 @@ if "event_log" not in st.session_state:
     st.session_state.event_log = EventLog()
 
 if "llm" not in st.session_state:
-    st.session_state.llm = GeminiProvider(api_key=GEMINI_API_KEY, model="gemini-2.0-flash")
+    st.session_state.llm = GeminiProvider(api_key=GEMINI_API_KEY, model="gemini-3.6-flash")
 
 if "orchestrator" not in st.session_state:
     st.session_state.orchestrator = Orchestrator(log=st.session_state.event_log, llm=st.session_state.llm)
@@ -57,6 +57,10 @@ try:
 except Exception as e:
     reply = None
     chat_box.error(f"Error al procesar la propuesta: {e}")
+
+if reply is not None:
+    chat_box.markdown(reply)
+    st.session_state.messages.append({"role": "assistant", "content": reply})
 
 if reply is not None:
     chat_box.markdown(reply)
