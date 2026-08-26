@@ -177,11 +177,15 @@ function App() {
     setInput('')
     setLoading(true)
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 50_000)
+
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
+        signal: controller.signal,
       })
       if (!res.ok) {
         const err = await res.json()
@@ -192,8 +196,13 @@ function App() {
       fetchState()
       fetchEvents()
     } catch (err) {
-      setMessages((m) => [...m, { role: 'assistant', content: `⚠️ ${err.message}` }])
+      const msg =
+        err.name === 'AbortError'
+          ? '⚠️ El asistente tardó demasiado en responder. Inténtalo de nuevo.'
+          : `⚠️ ${err.message}`
+      setMessages((m) => [...m, { role: 'assistant', content: msg }])
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
     }
   }
