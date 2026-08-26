@@ -19,6 +19,7 @@ function App() {
   const [tools, setTools] = useState([])
   const [execResult, setExecResult] = useState(null)
   const [showExec, setShowExec] = useState(false)
+  const [background, setBackground] = useState(null)
 
   const bottomRef = useRef(null)
 
@@ -184,7 +185,7 @@ function App() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, conversation_id: convId }),
         signal: controller.signal,
       })
       if (!res.ok) {
@@ -194,7 +195,12 @@ function App() {
       const data = await res.json()
       setMessages((m) => [...m, { role: 'assistant', content: data.reply }])
       fetchState()
-      fetchEvents()
+      if (data.processing && data.task_id) {
+        setBackground({ id: data.task_id })
+        pollBackground(data.task_id)
+      } else {
+        fetchEvents()
+      }
     } catch (err) {
       const msg =
         err.name === 'AbortError'
@@ -205,6 +211,37 @@ function App() {
       clearTimeout(timeout)
       setLoading(false)
     }
+  }
+
+  async function pollBackground(taskId, attempts = 30) {
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks`)
+      if (!res.ok) throw new Error('error')
+      const tasks = await res.json()
+      const t = tasks.find((x) => x.id === taskId)
+      if (!t) {
+        setBackground(null)
+        fetchEvents()
+        fetchState()
+        return
+      }
+      if (t.status === 'completed' || t.status === 'failed') {
+        setBackground(null)
+        fetchEvents()
+        fetchState()
+        return
+      }
+    } catch (e) {
+      setBackground(null)
+      return
+    }
+    if (attempts <= 0) {
+      setBackground(null)
+      fetchEvents()
+      fetchState()
+      return
+    }
+    setTimeout(() => pollBackground(taskId, attempts - 1), 2000)
   }
 
   return (
@@ -417,6 +454,15 @@ function App() {
                   <span className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" />
                   <span className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce [animation-delay:0.15s]" />
                   <span className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce [animation-delay:0.3s]" />
+                </div>
+              </div>
+            )}
+
+            {background && (
+              <div className="flex justify-start">
+                <div className="bg-[#111] border border-emerald-800/40 rounded-full px-4 py-2 text-xs text-emerald-300 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                  ⚙️ Orquestador procesando en segundo plano…
                 </div>
               </div>
             )}

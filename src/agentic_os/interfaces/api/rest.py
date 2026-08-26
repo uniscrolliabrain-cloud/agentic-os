@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ from ...execution.tools import build_default_registry
 from ...execution.tools.base import Tool
 from ...infrastructure.config.settings import Settings
 from ...infrastructure.tenancy import Tenant, TenantConfig, TenantContext, TenantRegistry
+from ...interfaces.llm.chat import FrontAssistant
 from ...interfaces.llm.provider import GeminiProvider, MockLLMProvider
 from ...kernel.policy.engine import PolicyEngine
 from ...kernel.policy.models import Policy, PolicyRule
@@ -55,6 +57,17 @@ else:
 
 _orchestrator = Orchestrator(log=_event_log, llm=_llm)
 
+# Asistente frontal (PR): con quien habla el usuario. Rápido, con knowledge base.
+_front_assistant = FrontAssistant(
+    model_name=settings.gemini_chat_model,
+    api_key=settings.gemini_api_key,
+    temperature=settings.gemini_temperature,
+)
+
+# Tareas de orquestación en segundo plano: el usuario nunca espera por ellas.
+_tasks_lock = threading.Lock()
+_background_tasks: Dict[str, Any] = {}
+
 # --- Persistencia de conversaciones ---
 DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 CONVERSATIONS_DIR = DATA_DIR / "conversations"
@@ -81,11 +94,13 @@ def _save_conversation(conv: Dict[str, Any]) -> None:
 # --- Schemas de request/response ---
 class ChatRequest(BaseModel):
     message: str
+    conversation_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
-    intent: Intent
     reply: str
+    processing: bool = False
+    task_id: Optional[str] = None
 
 
 class MessageOut(BaseModel):
@@ -152,21 +167,157 @@ def get_events() -> List[EventOut]:
     ]
 
 
+def _append_message_to_conversation(conv_id: str, role: str, content: str) -> None:
+    """Persiste un mensaje en una conversación y actualiza título/fecha."""
+    conv = _load_conversation(conv_id)
+    conv["messages"].append({"role": role, "content": content})
+    if len(conv["messages"]) == 1:
+        conv["title"] = content[:50] + ("..." if len(content) > 50 else "")
+    conv["updated_at"] = datetime.utcnow().isoformat()
+    _save_conversation(conv)
+
+
+def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
+    """Traduce la Intent propuesta por el director a una tool conocida del registry."""
+    k = (kind or "").lower()
+    if any(t in k for t in ("email", "correo", "gmail", "mail")):
+        return "gmail_send"
+    if "slack" in k:
+        return "slack_send"
+    if "whatsapp" in k:
+        return "whatsapp_send"
+    if any(t in k for t in ("calendar", "calendario", "meeting", "reuni", "cita", "evento", "schedule")):
+        return "calendar_create_event"
+    if any(t in k for t in ("scrape", "scrap", "web", "url")):
+        return "web_scrape"
+    return None
+
+
+def _try_execute(action: Optional[str], intent: Intent) -> str:
+    """Ejecuta la acción en el primer tenant registrado si la policy lo permite.
+    Solo se invoca desde el background, nunca en la espera del usuario."""
+    if action is None:
+        return "sin herramienta concreta"
+    tenants = _tenant_registry.list_all()
+    if not tenants:
+        return "sin clientes registrados para ejecutar"
+    tenant = tenants[0]
+    if not _policy_engine.is_allowed(tenant_id=tenant.id, action=action):
+        return f"acción '{action}' denegada por la política del cliente"
+    try:
+        _executor.execute(
+            action=action,
+            params={"rationale": intent.goal, "payload": intent.payload},
+            context=TenantContext(tenant=tenant),
+        )
+        return f"ejecutada '{action}'"
+    except Exception as e:
+        return f"fallo al ejecutar '{action}': {e}"
+
+
+def _start_orchestration_task(message: str, conversation_id: Optional[str] = None) -> str:
+    """Lanza el orquestador real (Intent -> Policy -> Executor -> EventLog) en un
+    hilo en segundo plano. La respuesta al usuario NO espera a esto."""
+    task_id = f"task_{uuid.uuid4().hex[:8]}"
+    with _tasks_lock:
+        _background_tasks[task_id] = {
+            "id": task_id,
+            "status": "running",
+            "message": message,
+            "summary": "",
+            "started_at": datetime.utcnow().isoformat(),
+        }
+
+    def _run() -> None:
+        try:
+            intent = _orchestrator.handle_user_message(message)
+            note = ""
+            if intent.kind and intent.kind != "reply_to_user":
+                action = _map_kind_to_action(intent.kind)
+                note = _try_execute(action, intent) if action else f"sin tool para '{intent.kind}'"
+            summary = f"Intent '{intent.kind}' procesado"
+            if note:
+                summary += f" · {note}"
+            _event_log.append(
+                Event(
+                    kind="BackgroundProcessingDone",
+                    entity_id=task_id,
+                    payload={"task_id": task_id, "intent_kind": intent.kind, "note": note},
+                    actor_id="orchestrator",
+                )
+            )
+            if conversation_id:
+                try:
+                    _append_message_to_conversation(conversation_id, "assistant", f"⚙️ (back office) {summary} ✅")
+                except HTTPException:
+                    pass
+            with _tasks_lock:
+                _background_tasks[task_id].update(
+                    status="completed",
+                    summary=summary,
+                    ended_at=datetime.utcnow().isoformat(),
+                )
+        except Exception as e:  # noqa: BLE001
+            _event_log.append(
+                Event(
+                    kind="BackgroundProcessingFailed",
+                    entity_id=task_id,
+                    payload={"task_id": task_id, "error": str(e)},
+                    actor_id="orchestrator",
+                )
+            )
+            if conversation_id:
+                try:
+                    _append_message_to_conversation(conversation_id, "assistant", f"⚠️ (back office) error al procesar: {e}")
+                except HTTPException:
+                    pass
+            with _tasks_lock:
+                _background_tasks[task_id].update(
+                    status="failed",
+                    summary=str(e),
+                    ended_at=datetime.utcnow().isoformat(),
+                )
+
+    threading.Thread(target=_run, daemon=True).start()
+    return task_id
+
+
+@app.get("/api/tasks")
+def list_tasks() -> List[Dict[str, Any]]:
+    """Lista las tareas de orquestación en segundo plano (para que la UI avise)."""
+    with _tasks_lock:
+        return [dict(t) for t in _background_tasks.values()]
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> ChatResponse:
-    """El usuario escribe un mensaje -> el rol activo (director) propone una
-    Intent -> se guarda como evento auditable -> se devuelve la propuesta.
-    NUNCA ejecuta nada por sí mismo."""
-    if not req.message.strip():
+    """Dos velocidades:
+    1) El asistente frontal (PR) responde rápido, con knowledge base.
+    2) El orquestador real procesa en segundo plano (el usuario no espera).
+    """
+    message = req.message.strip()
+    if not message:
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
 
-    try:
-        intent = _orchestrator.handle_user_message(req.message)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al procesar la propuesta: {e}")
+    if req.conversation_id:
+        try:
+            _append_message_to_conversation(req.conversation_id, "user", message)
+        except HTTPException:
+            pass
 
-    reply = intent.reply_to_user or f"(Propuesta: {intent.kind} sobre {intent.entity_id})"
-    return ChatResponse(intent=intent, reply=reply)
+    try:
+        reply = _front_assistant.answer(message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"El asistente no pudo responder: {e}")
+
+    if req.conversation_id:
+        try:
+            _append_message_to_conversation(req.conversation_id, "assistant", reply)
+        except HTTPException:
+            pass
+
+    task_id = _start_orchestration_task(message, conversation_id=req.conversation_id)
+    return ChatResponse(reply=reply, processing=True, task_id=task_id)
 
 
 # --- Endpoints de conversaciones ---

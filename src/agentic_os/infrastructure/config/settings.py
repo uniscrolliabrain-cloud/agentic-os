@@ -6,6 +6,9 @@ class Settings(BaseSettings):
 
     env: str = "dev"
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-2.0-flash"
+    # Modelo de orquestación (back office): propone Intents + ejecuta policies
+    gemini_model: str = "gemini-3.6-flash"
+    # Modelo del asistente frontal (PR): con el que habla el usuario, debe ser rápido
+    gemini_chat_model: str = "gemini-3.6-flash"
     gemini_temperature: float = 0.2
 

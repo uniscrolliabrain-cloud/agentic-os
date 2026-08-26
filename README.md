@@ -59,7 +59,8 @@ pytest
 |--------|-----------------------------------------|----------------------------------------------------|
 | GET    | `/api/state`                            | Rol activo y número de eventos en el log           |
 | GET    | `/api/events`                           | Lista de eventos auditables (EventLog)             |
-| POST   | `/api/chat`                             | Envía mensaje al director → propone una Intent     |
+| POST   | `/api/chat`                             | PR responde rápido (knowledge base) + orquestador en segundo plano |
+| GET    | `/api/tasks`                           | Estado de las tareas de orquestación en background |
 | GET    | `/api/conversations`                    | Lista conversaciones guardadas                     |
 | POST   | `/api/conversations`                    | Crea una conversación nueva                        |
 | GET    | `/api/conversations/{id}`               | Carga una conversación por id                      |
@@ -76,6 +77,28 @@ pytest
 
 Las conversaciones se guardan en `data/conversations/*.json` (persistencia en disco).
 Los tenants se guardan en `data/tenants/registry.json`.
+
+## Arquitectura de dos velocidades
+
+Para que el usuario nunca espere al razonamiento del orquestador, el chat tiene dos capas:
+
+1. **Asistente frontal (PR)** — con quien habla el usuario. Rápido, natural y con
+   **knowledge base** (carpeta `knowledge/`, RAG-lite por palabras clave). Usa
+   `GEMINI_CHAT_MODEL` y NO ejecuta ni propone acciones.
+2. **Orquestador (back office)** — se dispara en segundo plano tras cada mensaje.
+   El rol *director* (GA) propone una `Intent`, el `PolicyEngine` la valida, el
+   `Executor` la ejecuta si aplica y todo se registra en el `EventLog`. El usuario
+   **nunca habla con el orquestador en su línea de espera**.
+
+```
+Usuario escribe
+   ├─ FrontAssistant (PR): knowledge base → responde al instante
+   └─ [background] Orchestrator: Intent → Policy → Executor → EventLog
+```
+
+- Para alimentar la knowledge base, añade/edita markdown en `knowledge/`.
+- La UI muestra "⚙️ Orquestador procesando en segundo plano…" y refresca el log al terminar.
+- Endpoint auxiliar: `GET /api/tasks` devuelve el estado de las tareas en background.
 
 ## Arquitectura determinista
 
