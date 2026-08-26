@@ -1,0 +1,1 @@
+"""cognition.reasoning: proposer, deductivo, causal, consistencia e incertidumbre"""

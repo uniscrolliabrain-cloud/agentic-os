@@ -1,0 +1,1 @@
+"""cognition.skills: habilidades/SOPs y su librería"""

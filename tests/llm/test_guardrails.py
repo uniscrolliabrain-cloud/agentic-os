@@ -18,8 +18,8 @@ def test_guard_invalid_text():
 
 def test_guard_intents_valid():
     intents = [
-        Intent(goal="Check inventory", rationale="Verify stock levels"),
-        Intent(goal="Notify supplier", rationale="Low stock trigger"),
+        Intent(goal="Check inventory", kind="reply_to_user", rationale="Verify stock levels"),
+        Intent(goal="Notify supplier", kind="reply_to_user", rationale="Low stock trigger"),
     ]
     validated = guard_intents(intents)
     assert len(validated) == 2
@@ -27,7 +27,7 @@ def test_guard_intents_valid():
 
 def test_guard_intents_violation_raises_error():
     intents = [
-        Intent(goal="DROP TABLE patients", rationale="Malicious attempt"),
+        Intent(goal="DROP TABLE patients", kind="reply_to_user", rationale="Malicious attempt"),
     ]
     with pytest.raises(GuardrailViolationError):
         guard_intents(intents)

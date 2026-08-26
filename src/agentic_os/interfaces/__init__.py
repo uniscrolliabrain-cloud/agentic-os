@@ -1,0 +1,1 @@
+"""interfaces: mcp, api, llm y eventos"""

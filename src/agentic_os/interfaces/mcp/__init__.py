@@ -1,0 +1,1 @@
+"""interfaces.mcp: cliente, servidor, manifest y tools MCP"""

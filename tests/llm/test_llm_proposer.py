@@ -16,8 +16,8 @@ def test_deterministic_base_proposer():
 def test_llm_proposer_structured_proposal():
     mock_response = IntentProposalResponse(
         intents=[
-            Intent(goal="Verify patient history", rationale="Needed before diagnosis"),
-            Intent(goal="Check medication compatibility", rationale="Safety invariant"),
+            Intent(goal="Verify patient history", kind="review_record", rationale="Needed before diagnosis"),
+            Intent(goal="Check medication compatibility", kind="review_record", rationale="Safety invariant"),
         ]
     )
     provider = MockLLMProvider(structured_response=mock_response)
@@ -39,8 +39,8 @@ def test_llm_proposer_structured_proposal():
 def test_llm_proposer_filters_empty_goals():
     mock_response = IntentProposalResponse(
         intents=[
-            Intent(goal="Valid goal", rationale="Valid rationale"),
-            Intent(goal="", rationale="Empty goal should be filtered"),
+            Intent(goal="Valid goal", kind="reply_to_user", rationale="Valid rationale"),
+            Intent(goal="", kind="reply_to_user", rationale="Empty goal should be filtered"),
         ]
     )
     provider = MockLLMProvider(structured_response=mock_response)

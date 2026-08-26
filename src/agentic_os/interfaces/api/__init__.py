@@ -1,0 +1,1 @@
+"""interfaces.api: FastAPI REST, dependencias y webhooks"""

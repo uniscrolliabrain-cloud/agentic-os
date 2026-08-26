@@ -1,0 +1,1 @@
+"""domains.finance: ontología, políticas, proyecciones y herramientas del dominio financiero"""

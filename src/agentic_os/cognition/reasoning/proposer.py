@@ -19,7 +19,7 @@ class Proposer:
     """Deterministic base proposer stub."""
 
     def propose(self, beliefs: List[Belief], goal: str) -> List[Intent]:
-        return [Intent(goal=goal, rationale="deterministic stub")]
+        return [Intent(goal=goal, kind="reply_to_user", rationale="deterministic stub")]
 
 
 class LLMProposer(Proposer):

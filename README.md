@@ -9,15 +9,19 @@ Kernel = invariantes. LLM proposes, system disposes.
 - Ontology separa metamodelo (invariante) de vocabulario (extensible por dominio)
 
 ## Estructura
+
 ```
-kernel/ - invariantes, estable, versionado
-cognition/ - beliefs, reasoning, planning, memory
-execution/ - action, executor, tools
-orchestration/ - loops, scheduler, VSM
-interfaces/ - mcp, api, llm, events
-domains/ - clinic, finance (extienden vocabulario)
-infrastructure/ - persistence, config, telemetry
-frontend/ - interfaz React + Tailwind (Vite)
+src/agentic_os/
+  kernel/             invariantes, estable, versionado (world, policy, ontology, types)
+  cognition/          beliefs, reasoning, planning, memory, skills, roles
+  execution/          action, executor, tools (gmail, slack, whatsapp, calendar, scraper, documentation)
+  orchestration/      loops, scheduler, coordinator (VSM)
+  interfaces/         mcp, api, llm, events
+  domains/            clinic, finance (extienden vocabulario)
+  infrastructure/     persistence, config, telemetry, tenancy
+frontend/             interfaz React + Tailwind (Vite)
+tests/                tests de kernel y llm
+docs/                 arquitectura, invariantes, ontología, gobernanza
 ```
 
 ## Quickstart

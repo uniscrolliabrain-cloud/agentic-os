@@ -1,0 +1,1 @@
+"""infrastructure.persistence: event store y snapshots"""

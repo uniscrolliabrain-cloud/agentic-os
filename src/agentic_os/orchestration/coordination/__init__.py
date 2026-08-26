@@ -1,0 +1,1 @@
+"""orchestration.coordination: coordinación entre agentes (VSM)"""

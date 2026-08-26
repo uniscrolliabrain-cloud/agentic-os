@@ -1,0 +1,1 @@
+"""execution: acción, ejecutor y resultados"""
