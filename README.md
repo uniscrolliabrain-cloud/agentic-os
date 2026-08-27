@@ -115,3 +115,30 @@ Todo se registra en el EventLog (auditable)
 ```
 
 El LLM **nunca ejecuta directamente**: solo propone. La policy decide, el executor ejecuta.
+
+## Connector Kernel (capa de conectividad)
+
+Bajo `src/agentic_os/connectors/` vive el **kernel de conectores**: la frontera de
+ejecución cerrada entre los agentes y el mundo real. **Los 44 providers están
+creados pero SIN conectar** — el código nunca contiene credenciales; se inyectan
+vía `.env`/CredentialStore cuando toque.
+
+```
+MiniAgente → capability canónica → Command (Pydantic)
+    → CapabilityRegistry → ConnectorRouter → Connector → Provider API
+    → resultado normalizado → Pydantic validado → EventLog
+```
+
+- **44 conectores** declarados (Google, Microsoft, OpenAI, Anthropic, Gemini,
+  HubSpot, Salesforce, Pipedrive, Slack, WhatsApp, Telegram, Meta, LinkedIn,
+  TikTok, WordPress, Shopify, GitHub, Vercel, Cloudflare, n8n, Notion, Stripe,
+  Twilio, ElevenLabs, DocuSign, Tavily/SerpAPI/Exa/Brave, browser Playwright,
+  storage S3/R2/Supabase, PostgreSQL/Redis/MongoDB, Linear/ClickUp/Asana/Jira,
+  Vapi/Retell...) con **265 capacidades canónicas** (`crm.contact.create`,
+  `email.message.send`, `finance.refund.create`...).
+- Un agente solo emite `Command`s pydantic; jamás ve credenciales, endpoints ni
+  SDKs. Sin conexión, toda ejecución devuelve un stub controlado
+  (`CONNECTOR_NOT_CONFIGURED`) y el dry-run devuelve preview sin efecto.
+- Clasificación de riesgo por capability (READ_ONLY, EXTERNAL_COMMUNICATION,
+  FINANCIAL, DESTRUCTIVE...), errores normalizados y auditoría lista para
+  policy/aprobación humana. Especificación completa en `docs/spec/`.
