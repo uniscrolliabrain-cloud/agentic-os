@@ -1,8 +1,8 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
 from typing import Any, Dict, List, Optional
-from..types.ids import new_id
-from..types.time import now_utc
+from ..types.ids import new_id
+from ..types.time import now_utc
 from datetime import datetime
 import threading
 
@@ -32,10 +32,7 @@ class EventLog(BaseModel):
     Mantenemos RLock aquí para no romper nada mientras migramos.
     """
     events: List[Event] = Field(default_factory=list)
-    _lock: threading.RLock = Field(default_factory=threading.RLock, exclude=True, repr=False)
-
-    class Config:
-        arbitrary_types_allowed = True
+    _lock: threading.RLock = PrivateAttr(default_factory=threading.RLock)
 
     def append(self, e: Event) -> None:
         # Thread-safe append (FASE 0.5)
