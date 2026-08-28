@@ -81,6 +81,7 @@ def _save_conversation(conv: Dict[str, Any]) -> None:
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     reply: str
@@ -166,26 +167,26 @@ def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
         return "web_scrape"
     return None
 
-def _try_execute(action: Optional[str], intent: Intent) -> str:
+def _try_execute(action: Optional[str], intent: Intent, tenant_id: str) -> str:
     if action is None:
         return "sin herramienta concreta"
-    tenants = _tenant_registry.list_all()
-    if not tenants:
-        return "sin clientes registrados"
-    tenant = tenants[0]
-    if not _policy_engine.is_allowed(tenant_id=tenant.id, action=action):
-        return f"acción '{action}' denegada por política del tenant {tenant.id}"
+    tenant = _tenant_registry.get(tenant_id)
+    if tenant is None:
+        return f"tenant {tenant_id} no registrado"
+    context = TenantContext(tenant=tenant)
     try:
-        _executor.execute(
+        result = _executor.execute(
             action=action,
             params={"rationale": intent.goal, "payload": intent.payload},
-            context=TenantContext(tenant=tenant),
+            context=context,
         )
+        if not result.get("success"):
+            return f"rechazada/fallo '{action}': {result.get('error')}"
         return f"ejecutada '{action}'"
     except Exception as e:
         return f"fallo al ejecutar '{action}': {e}"
 
-def _start_orchestration_task(message: str, conversation_id: Optional[str] = None) -> str:
+def _start_orchestration_task(message: str, conversation_id: Optional[str] = None, tenant_id: str = "system") -> str:
     task_id = f"task_{uuid.uuid4().hex[:8]}"
     with _tasks_lock:
         _background_tasks[task_id] = {
@@ -197,11 +198,11 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
         }
     def _run() -> None:
         try:
-            intent = _orchestrator.handle_user_message(message)
+            intent = _orchestrator.handle_user_message(message, tenant_id=tenant_id)
             note = ""
             if intent.kind and intent.kind != "reply_to_user":
                 action = _map_kind_to_action(intent.kind)
-                note = _try_execute(action, intent) if action else f"sin tool para '{intent.kind}'"
+                note = _try_execute(action, intent, tenant_id) if action else f"sin tool para '{intent.kind}'"
             summary = f"Intent '{intent.kind}' procesado"
             if note:
                 summary += f" · {note}"
@@ -265,7 +266,7 @@ def chat(req: ChatRequest) -> ChatResponse:
             _append_message_to_conversation(req.conversation_id, "assistant", reply)
         except HTTPException:
             pass
-    task_id = _start_orchestration_task(message, conversation_id=req.conversation_id)
+    task_id = _start_orchestration_task(message, conversation_id=req.conversation_id, tenant_id=req.tenant_id or "system")
     return ChatResponse(reply=reply, processing=True, task_id=task_id)
 
 @app.get("/api/conversations", response_model=List[ConversationSummary])
@@ -313,7 +314,7 @@ def delete_conversation(conv_id: str) -> Dict[str, str]:
 
 _tenant_registry = TenantRegistry()
 _policy_engine = PolicyEngine()
-_executor = Executor(registry=build_default_registry())
+_executor = Executor(registry=build_default_registry(), policy_engine=_policy_engine)
 
 class TenantCreate(BaseModel):
     name: str

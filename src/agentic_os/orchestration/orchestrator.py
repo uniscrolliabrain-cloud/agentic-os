@@ -17,11 +17,14 @@ class Orchestrator:
         state = replay(self.log)
         return {"state": state, "role": self.current_role.name}
 
-    def handle_user_message(self, user_message: str) -> Intent:
+    def handle_user_message(self, user_message: str, tenant_id: str = "system") -> Intent:
         """
         El usuario escribe algo en el chat -> el rol activo (director) propone
         una Intent -> se guarda como evento en el log (auditable) -> se devuelve
         para que la capa siguiente (policy + executor) decida si se ejecuta.
+
+        `tenant_id` es obligatorio para el aislamiento multi-tenant: el evento
+        queda etiquetado al tenant que generó la conversación.
 
         Este método NUNCA ejecuta nada por sí mismo: solo produce una propuesta.
         """
@@ -48,6 +51,7 @@ class Orchestrator:
                 entity_id=intent.entity_id,
                 payload=intent.model_dump(),
                 actor_id=role.name,
+                tenant_id=tenant_id,
             )
         )
 

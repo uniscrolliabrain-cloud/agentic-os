@@ -102,6 +102,30 @@ class PolicyEngine:
 
         return decision.effect == "allow"
 
+    def can_for_tenant(
+        self,
+        tenant_id: str,
+        capability: str,
+        resource_kind: Optional[str] = None,
+        roles: Optional[list[str]] = None,
+    ) -> Decision:
+        """Evalúa una capability contra la policy del tenant (o default deny en prod).
+
+        Aislamiento multi-tenant real: nunca se usa una regla de un tenant distinto
+        para decidir sobre otro.
+        """
+        policy = self._load_tenant_policy(tenant_id)
+        if policy is None:
+            policy = default_policy(tenant_id)
+
+        # En prod, si la política resultante es allow-all (herencia de dev), negar.
+        if settings.env != "dev":
+            if any(r.capability == "*" and r.effect == "allow" for r in policy.rules):
+                return Decision(effect="deny", reason=f"default-allow no permitido en prod para {tenant_id}")
+
+        evaluator = PolicyEvaluator(policy)
+        return evaluator.evaluate(capability, resource_kind, roles or [])
+
     def requires_approval(self, decision: Decision) -> bool:
         return decision.effect == "require_approval"
 

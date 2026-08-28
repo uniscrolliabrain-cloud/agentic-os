@@ -45,7 +45,13 @@ class Executor:
         """Ejecuta una acción (capability). SIEMPRE pasa por policy.can() si hay engine."""
         # 0. POLICY CHECK - aquí dentro, no en el caller
         if self.policy:
-            decision = self.policy.can(action, context, roles or [])
+            tenant_id = None
+            if context is not None and hasattr(context, "tenant"):
+                tenant_id = getattr(context.tenant, "id", None)
+            if tenant_id:
+                decision = self.policy.can_for_tenant(tenant_id, action, None, roles or [])
+            else:
+                decision = self.policy.can(action, context, roles or [])
             if decision and decision.effect == "deny":
                 return {"success": False, "error": f"denied by {decision.rule_id}", "decision": decision}
             if decision and decision.effect == "require_approval":
