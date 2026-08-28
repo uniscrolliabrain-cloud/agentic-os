@@ -10,7 +10,7 @@ como evento auditable. Todavía no hay policy/executor conectados
 import streamlit as st
 
 from agentic_os.interfaces.llm.provider import GeminiProvider
-from agentic_os.kernel.world.events import EventLog
+from agentic_os.infrastructure.persistence import get_eventlog_repo
 from agentic_os.orchestration.orchestrator import Orchestrator
 
 st.set_page_config(page_title="Agentic-OS", page_icon="🧠")
@@ -22,7 +22,7 @@ if not GEMINI_API_KEY:
     st.stop()
 
 if "event_log" not in st.session_state:
-    st.session_state.event_log = EventLog()
+    st.session_state.event_log = get_eventlog_repo()
 
 if "llm" not in st.session_state:
     st.session_state.llm = GeminiProvider(api_key=GEMINI_API_KEY, model="gemini-3.6-flash")
@@ -34,7 +34,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 st.title("🧠 Agentic-OS")
-st.caption(f"Rol activo: {st.session_state.orchestrator.current_role.name} · eventos en log: {len(st.session_state.event_log)}")
+st.caption(f"Rol activo: {st.session_state.orchestrator.current_role.name} · eventos en log: {len(st.session_state.event_log.list_all())}")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
