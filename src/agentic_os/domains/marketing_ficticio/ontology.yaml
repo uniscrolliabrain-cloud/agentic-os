@@ -1,0 +1,22 @@
+# Ontología de dominio: Marketing ficticio (ejemplo del Compilador Ontológico)
+# Convierte vocabulario de dominio -> capabilities canónicas tipadas que el
+# Connector Kernel puede resolver (p.ej. crm.contact.create -> hubspot/salesforce).
+domain: marketing_ficticio
+description: "Dominio de ejemplo: genera capabilities a partir de vocabulario de leads y citas"
+
+vocabulary:
+  entities:
+    - lead
+    - cita
+    - campana
+  relations:
+    - genera
+    - programa
+  # capabilities del dominio: mapean a capacities canonicas reales del registry
+  capabilities:
+    - { name: crm.lead.create,   entity: lead,   action: create,    canonical: crm.deal.create,        tools: [hubspot] }
+    - { name: crm.lead.read,     entity: lead,   action: read,      canonical: crm.deal.read,          tools: [hubspot] }
+    - { name: crm.cita.create,   entity: cita,   action: create,    canonical: calendar.event.create,  tools: [google] }
+    - { name: crm.cita.read,     entity: cita,   action: read,      canonical: calendar.event.read,    tools: [google] }
+    - { name: crm.campana.create, entity: campana, action: create,  canonical: crm.contact.create,     tools: [salesforce] }
+    - { name: crm.campana.read,  entity: campana, action: read,     canonical: crm.contact.read,       tools: [salesforce] }
