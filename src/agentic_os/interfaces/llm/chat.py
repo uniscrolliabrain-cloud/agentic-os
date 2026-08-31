@@ -7,7 +7,8 @@ conversa de forma natural apoyándose en la knowledge base local.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from pathlib import Path
+from typing import Dict, Optional
 
 from .knowledge import KnowledgeBase
 from .provider import BaseLLMProvider, GeminiProvider, MockLLMProvider
@@ -83,6 +84,9 @@ class FrontAssistant:
         knowledge_dir=None,
     ):
         self.kb = KnowledgeBase(directory=knowledge_dir)
+        # KBs combinadas por tenant (compartida + carpeta del tenant), con caché
+        self._tenant_kbs: Dict[str, KnowledgeBase] = {}
+        self._shared_dirs = [d for d in self.kb.directories]
         if api_key:
             self.provider: BaseLLMProvider = GeminiProvider(
                 api_key=api_key, model=model_name, temperature=temperature
@@ -95,9 +99,22 @@ class FrontAssistant:
                 )
             )
 
-    def answer(self, user_message: str) -> str:
-        """Genera una respuesta rápida y natural usando la knowledge base."""
-        snippets = self.kb.retrieve(user_message)
+    def answer(self, user_message: str, tenant_knowledge_dir: Path | str | None = None) -> str:
+        """Genera una respuesta rápida y natural usando la knowledge base.
+
+        Si se indica `tenant_knowledge_dir`, la recuperación combina la base
+        compartida con la carpeta de conocimiento del tenant (la del tenant
+        gana si un documento con el mismo título existe en ambas fuentes).
+        """
+        if tenant_knowledge_dir is not None:
+            key = str(Path(tenant_knowledge_dir).resolve())
+            kb = self._tenant_kbs.get(key)
+            if kb is None:
+                kb = KnowledgeBase(directories=[*self._shared_dirs, tenant_knowledge_dir])
+                self._tenant_kbs[key] = kb
+            snippets = kb.retrieve(user_message)
+        else:
+            snippets = self.kb.retrieve(user_message)
         if snippets:
             context = "\n\n".join(
                 f"[{s['title']}]\n{s['text'][:2200].strip()}" for s in snippets

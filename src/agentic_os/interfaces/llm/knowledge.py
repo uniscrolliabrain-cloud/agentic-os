@@ -21,24 +21,46 @@ _STOP_WORDS = {
 
 
 class KnowledgeBase:
-    """Carga los documentos de conocimiento en memoria y permite recuperarlos."""
+    """Carga los documentos de conocimiento en memoria y permite recuperarlos.
 
-    def __init__(self, directory: Path | str | None = None):
-        self.directory = Path(directory) if directory else _REPO_KNOWLEDGE
+    Acepta un directorio único (`directory`) o varios (`directories`), p. ej.
+    la base compartida (`knowledge/_shared/`) más la carpeta de un tenant
+    (`data/tenants/{tenant_id}/knowledge/`). Si un mismo documento aparece en
+    varias fuentes, gana el de la fuente más específica (última de la lista).
+    """
+
+    def __init__(
+        self,
+        directory: Path | str | None = None,
+        directories: List[Path | str] | None = None,
+    ):
+        if directories:
+            self.directories = [Path(d) for d in directories]
+        else:
+            self.directories = [Path(directory)] if directory else [_REPO_KNOWLEDGE]
+        self.directory = self.directories[0]
         self._documents: List[Dict] = self._load()
 
     def _load(self) -> List[Dict]:
         docs: List[Dict] = []
-        if not self.directory.exists():
-            return docs
-        paths = sorted(self.directory.glob("*.md")) + sorted(self.directory.glob("*.txt"))
-        for path in paths:
-            try:
-                text = path.read_text(encoding="utf-8")
-            except Exception:
+        seen_titles: Dict[str, Dict] = {}
+        for base in self.directories:
+            if not base.exists():
                 continue
-            title = path.stem.replace("_", " ").replace("-", " ").title()
-            docs.append({"path": str(path), "title": title, "text": text})
+            paths = sorted(base.glob("*.md")) + sorted(base.glob("*.txt"))
+            for path in paths:
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+                title = path.stem.replace("_", " ").replace("-", " ").title()
+                # la fuente más específica (posterior) sobrescribe a la compartida
+                seen_titles[title] = {
+                    "path": str(path),
+                    "title": title,
+                    "text": text,
+                }
+        docs = list(seen_titles.values())
         return docs
 
     def retrieve(self, query: str, top_k: int = 3) -> List[Dict]:

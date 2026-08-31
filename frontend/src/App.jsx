@@ -23,6 +23,13 @@ function App() {
 
   const bottomRef = useRef(null)
 
+  // FASE 4: el tenant activo viaja en la cabecera X-Tenant-Id, nunca en el body
+  function headersWithTenant(extra = {}) {
+    const h = { ...extra }
+    if (activeTenant) h['X-Tenant-Id'] = activeTenant
+    return h
+  }
+
   useEffect(() => {
     fetchState()
     fetchEvents()
@@ -38,21 +45,21 @@ function App() {
 
   async function fetchState() {
     try {
-      const res = await fetch(`${API_BASE}/api/state`)
+      const res = await fetch(`${API_BASE}/api/state`, { headers: headersWithTenant() })
       if (res.ok) setState(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchEvents() {
     try {
-      const res = await fetch(`${API_BASE}/api/events`)
+      const res = await fetch(`${API_BASE}/api/events`, { headers: headersWithTenant() })
       if (res.ok) setEvents(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchConversations() {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations`)
+      const res = await fetch(`${API_BASE}/api/conversations`, { headers: headersWithTenant() })
       if (res.ok) setConversations(await res.json())
     } catch (e) { console.error(e) }
   }
@@ -84,7 +91,7 @@ function App() {
 
   async function newConversation() {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST' })
+      const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: headersWithTenant() })
       if (res.ok) {
         const conv = await res.json()
         setCurrentConvId(conv.id)
@@ -96,7 +103,7 @@ function App() {
 
   async function openConversation(convId) {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/${convId}`)
+      const res = await fetch(`${API_BASE}/api/conversations/${convId}`, { headers: headersWithTenant() })
       if (res.ok) {
         const conv = await res.json()
         setCurrentConvId(conv.id)
@@ -107,7 +114,7 @@ function App() {
 
   async function deleteConversation(convId) {
     try {
-      await fetch(`${API_BASE}/api/conversations/${convId}`, { method: 'DELETE' })
+      await fetch(`${API_BASE}/api/conversations/${convId}`, { method: 'DELETE', headers: headersWithTenant() })
       if (currentConvId === convId) {
         setCurrentConvId(null)
         setMessages([])
@@ -144,8 +151,8 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/api/execute`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenant_id: activeTenant, action, params }),
+        headers: headersWithTenant({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ action, params }),
       })
       const data = await res.json()
       setExecResult(data)
@@ -164,7 +171,7 @@ function App() {
     let convId = currentConvId
     if (!convId) {
       try {
-        const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST' })
+        const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: headersWithTenant() })
         if (res.ok) {
           const conv = await res.json()
           convId = conv.id
@@ -184,7 +191,7 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headersWithTenant({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ message: text, conversation_id: convId }),
         signal: controller.signal,
       })

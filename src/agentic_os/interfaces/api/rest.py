@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -35,11 +35,44 @@ app.add_middleware(
 )
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
-CONVERSATIONS_DIR = DATA_DIR / "conversations"
+CONVERSATIONS_DIR = DATA_DIR / "conversations"  # legacy (pre multi-tenant); solo lectura
+TENANTS_DATA_DIR = DATA_DIR / "tenants"
 EVENTLOG_DIR = DATA_DIR / "eventlog"
 POLICIES_DIR = DATA_DIR / "policies"
-for d in (CONVERSATIONS_DIR, EVENTLOG_DIR, POLICIES_DIR):
+for d in (CONVERSATIONS_DIR, TENANTS_DATA_DIR, EVENTLOG_DIR, POLICIES_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------------- tenant ---
+# Resolución del tenant activo por CABECERA (X-Tenant-Id + X-Api-Key simple
+# guardada en TenantConfig.credentials), nunca por body.
+# TODO(auth): sustituir por OAuth/JWT real en una fase posterior; el mínimo de
+# esta fase es cerrar la fuga de datos entre tenants en las lecturas.
+_TENANT_HEADER = "X-Tenant-Id"
+_API_KEY_HEADER = "X-Api-Key"
+
+# tenant virtual por defecto para peticiones anónimas (back-compat en dev)
+_DEFAULT_SCOPE = "system"
+
+
+def tenant_scope(
+    x_tenant_id: Optional[str] = Header(default=None, alias=_TENANT_HEADER),
+    x_api_key: Optional[str] = Header(default=None, alias=_API_KEY_HEADER),
+) -> str:
+    """Dependency: resuelve y valida el tenant de la petición.
+
+    Sin cabecera -> scope "system" (peticiones anónimas solo ven datos del
+    tenant virtual por defecto). Con X-Tenant-Id: el tenant debe existir y, si
+    tiene `api_key` en credentials, la cabecera X-Api-Key debe coincidir.
+    """
+    if not x_tenant_id:
+        return _DEFAULT_SCOPE
+    tenant = _tenant_registry.get(x_tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    expected_key = tenant.config.credentials.get("api_key")
+    if expected_key is not None and x_api_key != expected_key:
+        raise HTTPException(status_code=401, detail="API key inválida para el tenant")
+    return tenant.id
 
 _event_log = get_eventlog_repo()
 
@@ -64,24 +97,54 @@ _front_assistant = FrontAssistant(
 _tasks_lock = threading.Lock()
 _background_tasks: Dict[str, Any] = {}
 
-def _conv_path(conv_id: str) -> Path:
-    return CONVERSATIONS_DIR / f"{conv_id}.json"
+def _tenant_conv_dir(tenant_id: str) -> Path:
+    """Carpeta de conversaciones de un tenant: data/tenants/{tenant_id}/conversations/."""
+    d = TENANTS_DATA_DIR / tenant_id / "conversations"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
-def _load_conversation(conv_id: str) -> Dict[str, Any]:
-    path = _conv_path(conv_id)
-    if not path.exists():
+
+def _find_conv_path(conv_id: str, scope: str) -> Optional[Path]:
+    """Localiza una conversación: primero en la carpeta del tenant del scope,
+    luego en la carpeta legacy plana (solo si su tenant_id coincide con el scope)."""
+    scoped = _tenant_conv_dir(scope) / f"{conv_id}.json"
+    if scoped.exists():
+        return scoped
+    legacy = CONVERSATIONS_DIR / f"{conv_id}.json"
+    if legacy.exists():
+        try:
+            with open(legacy, "r", encoding="utf-8") as f:
+                conv = json.load(f)
+        except Exception:
+            return None
+        if conv.get("tenant_id", "system") == scope:
+            return legacy
+    return None
+
+
+def _load_conversation(conv_id: str, scope: str) -> Dict[str, Any]:
+    path = _find_conv_path(conv_id, scope)
+    if path is None:
+        # 404 genérico: no se filtra si la conversación existe en otro tenant
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def _save_conversation(conv: Dict[str, Any]) -> None:
-    with open(_conv_path(conv["id"]), "w", encoding="utf-8") as f:
+    tenant_id = conv.get("tenant_id", "system")
+    path = _tenant_conv_dir(tenant_id) / f"{conv['id']}.json"
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(conv, f, ensure_ascii=False, indent=2)
+    # si venía de la carpeta legacy, limpiar el duplicado viejo
+    legacy = CONVERSATIONS_DIR / f"{conv['id']}.json"
+    if path != legacy and legacy.exists():
+        legacy.unlink()
 
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
-    tenant_id: Optional[str] = None
+    tenant_id: Optional[str] = None  # DEPRECATED (FASE 4): ignorado; el tenant se resuelve por cabecera X-Tenant-Id
 
 class ChatResponse(BaseModel):
     reply: str
@@ -94,6 +157,7 @@ class MessageOut(BaseModel):
 
 class ConversationOut(BaseModel):
     id: str
+    tenant_id: str = "system"
     title: str
     created_at: str
     updated_at: str
@@ -101,6 +165,7 @@ class ConversationOut(BaseModel):
 
 class ConversationSummary(BaseModel):
     id: str
+    tenant_id: str = "system"
     title: str
     created_at: str
     updated_at: str
@@ -131,7 +196,8 @@ def get_state() -> StateOut:
     )
 
 @app.get("/api/events", response_model=List[EventOut])
-def get_events() -> List[EventOut]:
+def get_events(scope: str = Depends(tenant_scope)) -> List[EventOut]:
+    """Eventos del tenant resuelto por cabecera — nunca de todos los tenants."""
     return [
         EventOut(
             id=e.id,
@@ -142,11 +208,11 @@ def get_events() -> List[EventOut]:
             actor_id=e.actor_id,
             tenant_id=e.tenant_id,
         )
-        for e in _event_log.list_all()
+        for e in _event_log.list_for_tenant(scope)
     ]
 
-def _append_message_to_conversation(conv_id: str, role: str, content: str) -> None:
-    conv = _load_conversation(conv_id)
+def _append_message_to_conversation(conv_id: str, role: str, content: str, scope: str) -> None:
+    conv = _load_conversation(conv_id, scope)
     conv["messages"].append({"role": role, "content": content})
     if len(conv["messages"]) == 1:
         conv["title"] = content[:50] + ("..." if len(content) > 50 else "")
@@ -212,12 +278,12 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                     entity_id=task_id,
                     payload={"task_id": task_id, "intent_kind": intent.kind, "note": note},
                     actor_id="orchestrator",
-                    tenant_id="system",
+                    tenant_id=tenant_id,
                 )
             )
             if conversation_id:
                 try:
-                    _append_message_to_conversation(conversation_id, "assistant", f"⚙️ (back office) {summary} ✅")
+                    _append_message_to_conversation(conversation_id, "assistant", f"⚙️ (back office) {summary} ✅", tenant_id)
                 except HTTPException:
                     pass
             with _tasks_lock:
@@ -229,12 +295,12 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                     entity_id=task_id,
                     payload={"task_id": task_id, "error": str(e)},
                     actor_id="orchestrator",
-                    tenant_id="system",
+                    tenant_id=tenant_id,
                 )
             )
             if conversation_id:
                 try:
-                    _append_message_to_conversation(conversation_id, "assistant", f"⚠️ (back office) error: {e}")
+                    _append_message_to_conversation(conversation_id, "assistant", f"⚠️ (back office) error: {e}", tenant_id)
                 except HTTPException:
                     pass
             with _tasks_lock:
@@ -248,55 +314,79 @@ def list_tasks() -> List[Dict[str, Any]]:
         return [dict(t) for t in _background_tasks.values()]
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
+def chat(req: ChatRequest, scope: str = Depends(tenant_scope)) -> ChatResponse:
     message = req.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
     if req.conversation_id:
         try:
-            _append_message_to_conversation(req.conversation_id, "user", message)
+            _append_message_to_conversation(req.conversation_id, "user", message, scope)
         except HTTPException:
             pass
+    # Knowledge base por tenant: compartida + carpeta del tenant (si existe)
+    tenant_knowledge_dir = TENANTS_DATA_DIR / scope / "knowledge"
+    kb_arg = tenant_knowledge_dir if scope != _DEFAULT_SCOPE else None
     try:
-        reply = _front_assistant.answer(message)
+        reply = _front_assistant.answer(message, tenant_knowledge_dir=kb_arg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"El asistente no pudo responder: {e}")
     if req.conversation_id:
         try:
-            _append_message_to_conversation(req.conversation_id, "assistant", reply)
+            _append_message_to_conversation(req.conversation_id, "assistant", reply, scope)
         except HTTPException:
             pass
-    task_id = _start_orchestration_task(message, conversation_id=req.conversation_id, tenant_id=req.tenant_id or "system")
+    task_id = _start_orchestration_task(message, conversation_id=req.conversation_id, tenant_id=scope)
     return ChatResponse(reply=reply, processing=True, task_id=task_id)
 
-@app.get("/api/conversations", response_model=List[ConversationSummary])
-def list_conversations() -> List[ConversationSummary]:
-    summaries = []
+def _iter_conversation_paths(scope: str):
+    """Conversaciones visibles para un tenant: su carpeta + legacy con su tenant_id."""
+    for path in _tenant_conv_dir(scope).glob("*.json"):
+        yield path
     for path in CONVERSATIONS_DIR.glob("*.json"):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 conv = json.load(f)
-            summaries.append(ConversationSummary(id=conv["id"], title=conv["title"], created_at=conv["created_at"], updated_at=conv["updated_at"], message_count=len(conv["messages"])))
+        except Exception:
+            continue
+        if conv.get("tenant_id", "system") == scope:
+            yield path
+
+@app.get("/api/conversations", response_model=List[ConversationSummary])
+def list_conversations(scope: str = Depends(tenant_scope)) -> List[ConversationSummary]:
+    summaries = []
+    seen = set()
+    for path in _iter_conversation_paths(scope):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                conv = json.load(f)
+            if conv["id"] in seen:
+                continue
+            seen.add(conv["id"])
+            summaries.append(ConversationSummary(
+                id=conv["id"], title=conv["title"], created_at=conv["created_at"],
+                updated_at=conv["updated_at"], message_count=len(conv["messages"]),
+                tenant_id=conv.get("tenant_id", "system"),
+            ))
         except Exception:
             continue
     summaries.sort(key=lambda c: c.updated_at, reverse=True)
     return summaries
 
-@app.post("/api/conversations", response_model=ConversationOut)
-def create_conversation() -> ConversationOut:
+@app.post("/api/conversations", response_model=ConversationOut, status_code=201)
+def create_conversation(scope: str = Depends(tenant_scope)) -> ConversationOut:
     now = datetime.utcnow().isoformat()
-    conv = {"id": str(uuid.uuid4()), "title": "Nueva conversación", "created_at": now, "updated_at": now, "messages": []}
+    conv = {"id": str(uuid.uuid4()), "tenant_id": scope, "title": "Nueva conversación", "created_at": now, "updated_at": now, "messages": []}
     _save_conversation(conv)
     return ConversationOut(**conv)
 
 @app.get("/api/conversations/{conv_id}", response_model=ConversationOut)
-def get_conversation(conv_id: str) -> ConversationOut:
-    conv = _load_conversation(conv_id)
+def get_conversation(conv_id: str, scope: str = Depends(tenant_scope)) -> ConversationOut:
+    conv = _load_conversation(conv_id, scope)
     return ConversationOut(**conv)
 
 @app.post("/api/conversations/{conv_id}/messages", response_model=ConversationOut)
-def add_message(conv_id: str, msg: MessageOut) -> ConversationOut:
-    conv = _load_conversation(conv_id)
+def add_message(conv_id: str, msg: MessageOut, scope: str = Depends(tenant_scope)) -> ConversationOut:
+    conv = _load_conversation(conv_id, scope)
     conv["messages"].append({"role": msg.role, "content": msg.content})
     if len(conv["messages"]) == 1:
         conv["title"] = msg.content[:50] + ("..." if len(msg.content) > 50 else "")
@@ -305,9 +395,10 @@ def add_message(conv_id: str, msg: MessageOut) -> ConversationOut:
     return ConversationOut(**conv)
 
 @app.delete("/api/conversations/{conv_id}")
-def delete_conversation(conv_id: str) -> Dict[str, str]:
-    path = _conv_path(conv_id)
-    if not path.exists():
+def delete_conversation(conv_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, str]:
+    path = _find_conv_path(conv_id, scope)
+    if path is None:
+        # 404 genérico: no revela si existe en otro tenant
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
     path.unlink()
     return {"status": "deleted", "id": conv_id}
@@ -333,7 +424,7 @@ class TenantOut(BaseModel):
     created_at: str
 
 class ExecuteRequest(BaseModel):
-    tenant_id: str
+    tenant_id: Optional[str] = None  # DEPRECATED (FASE 4): ignorado; el tenant se resuelve por cabecera X-Tenant-Id
     action: str
     params: Dict[str, Any] = {}
 
@@ -360,6 +451,9 @@ def create_tenant(req: TenantCreate) -> TenantOut:
         tenant = _tenant_registry.create(name=req.name, slug=req.slug, config=req.config or {})
         (EVENTLOG_DIR / f"{tenant.id}.jsonl").touch(exist_ok=True)
         (POLICIES_DIR / f"{tenant.id}.json").touch(exist_ok=True)
+        # FASE 4: espacios de datos del tenant (conversaciones + knowledge)
+        _tenant_conv_dir(tenant.id)
+        (TENANTS_DATA_DIR / tenant.id / "knowledge").mkdir(parents=True, exist_ok=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=TenantConfigPublic.from_config(tenant.config).model_dump(), created_at=tenant.created_at.isoformat())
@@ -402,8 +496,9 @@ def list_tools() -> List[ToolOut]:
     return [ToolOut(name=t.name) for t in _executor.registry.tools.values()]
 
 @app.post("/api/execute", response_model=ExecuteResponse)
-def execute(req: ExecuteRequest) -> ExecuteResponse:
-    tenant = _tenant_registry.get(req.tenant_id)
+def execute(req: ExecuteRequest, scope: str = Depends(tenant_scope)) -> ExecuteResponse:
+    # FASE 4: el tenant SIEMPRE viene de la cabecera, nunca del body
+    tenant = _tenant_registry.get(scope)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
     if not _policy_engine.is_allowed(tenant_id=tenant.id, action=req.action):
