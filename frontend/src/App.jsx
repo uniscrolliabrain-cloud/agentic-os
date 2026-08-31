@@ -21,6 +21,13 @@ function App() {
   const [showExec, setShowExec] = useState(false)
   const [background, setBackground] = useState(null)
 
+  // FASE 6: tabs de cliente — Briefings (Drive), Hoy (artifacts), Calendario (schedules), Drafts
+  const [activeTab, setActiveTab] = useState('chat')
+  const [schedules, setSchedules] = useState([])
+  const [drafts, setDrafts] = useState([])
+  const [artifacts, setArtifacts] = useState([])
+  const [newSchedule, setNewSchedule] = useState({ pipeline_id: 'inbox_watcher', interval_minutes: 30, hour: '' })
+
   const bottomRef = useRef(null)
 
   // FASE 4: el tenant activo viaja en la cabecera X-Tenant-Id, nunca en el body
@@ -88,6 +95,66 @@ function App() {
       if (res.ok) setTools(await res.json())
     } catch (e) { console.error(e) }
   }
+
+  // FASE 6: scheduler + drafts + artifacts (siempre por tenant via cabecera)
+  async function fetchSchedules() {
+    try {
+      const res = await fetch(`${API_BASE}/api/schedules`, { headers: headersWithTenant() })
+      if (res.ok) setSchedules(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+  async function fetchDrafts() {
+    try {
+      const res = await fetch(`${API_BASE}/api/drafts`, { headers: headersWithTenant() })
+      if (res.ok) setDrafts(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+  async function fetchArtifacts() {
+    try {
+      const res = await fetch(`${API_BASE}/api/artifacts`, { headers: headersWithTenant() })
+      if (res.ok) setArtifacts(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+  async function createSchedule(e) {
+    e.preventDefault()
+    const body = {
+      pipeline_id: newSchedule.pipeline_id,
+      interval_minutes: newSchedule.interval_minutes ? Number(newSchedule.interval_minutes) : null,
+      hour: newSchedule.hour ? Number(newSchedule.hour) : null,
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/schedules`, {
+        method: 'POST',
+        headers: headersWithTenant({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        setNewSchedule({ pipeline_id: 'inbox_watcher', interval_minutes: 30, hour: '' })
+        fetchSchedules()
+      }
+    } catch (e) { console.error(e) }
+  }
+
+  async function deleteSchedule(id) {
+    try {
+      const res = await fetch(`${API_BASE}/api/schedules/${id}`, {
+        method: 'DELETE',
+        headers: headersWithTenant(),
+      })
+      if (res.ok) fetchSchedules()
+    } catch (e) { console.error(e) }
+  }
+
+  // Al cambiar de tenant (o en el arranque) recargamos datos por tenant
+  useEffect(() => {
+    if (activeTenant) {
+      fetchSchedules()
+      fetchDrafts()
+    }
+  }, [activeTenant])
 
   async function newConversation() {
     try {
@@ -387,6 +454,23 @@ function App() {
             >
               {showEvents ? 'Ocultar log' : 'Ver log'}
             </button>
+
+            {/* FASE 6: tabs por tenant */}
+            <nav className="flex items-center gap-1 ml-2">
+              {['chat', 'briefings', 'hoy', 'calendario', 'drafts'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); if (tab === 'briefings') fetchArtifacts(); if (tab === 'calendario') fetchSchedules(); if (tab === 'drafts') fetchDrafts() }}
+                  className={`text-xs px-3 py-1 rounded-full border transition ${
+                    activeTab === tab
+                      ? 'bg-yellow-400/10 border-yellow-400/40 text-yellow-400'
+                      : 'bg-[#1a1a1a] border-[#2a2a2a] text-gray-400 hover:bg-[#2a2a2a]'
+                  }`}
+                >
+                  {tab === 'chat' ? 'Chat' : tab === 'briefings' ? 'Briefings' : tab === 'hoy' ? 'Hoy' : tab === 'calendario' ? 'Calendario' : 'Drafts'}
+                </button>
+              ))}
+            </nav>
           </div>
         </header>
 
@@ -428,6 +512,7 @@ function App() {
         )}
 
         <main className="flex-1 overflow-y-auto px-6 py-6">
+          {activeTab === 'chat' && (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 && (
               <div className="text-center py-16">
@@ -476,6 +561,114 @@ function App() {
 
             <div ref={bottomRef} />
           </div>
+          )}
+
+          {/* FASE 6: paneles de cliente */}
+          {activeTab !== 'chat' && (
+            <div className="max-w-4xl mx-auto space-y-4">
+              {activeTab === 'calendario' && (
+                <section className="space-y-4">
+                  <h2 className="text-lg font-semibold text-gray-200">Calendario de automatizaciones</h2>
+                  <form onSubmit={createSchedule} className="bg-[#151515] border border-[#2a2a2a] rounded-xl p-4 space-y-3">
+                    <div className="flex gap-3 flex-wrap">
+                      <select
+                        value={newSchedule.pipeline_id}
+                        onChange={(e) => setNewSchedule({ ...newSchedule, pipeline_id: e.target.value })}
+                        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-gray-200"
+                      >
+                        <option value="inbox_watcher">inbox_watcher</option>
+                        <option value="daily_social">daily_social</option>
+                        <option value="leads_to_draft">leads_to_draft</option>
+                      </select>
+                      <input
+                        type="number"
+                        placeholder="intervalo (min)"
+                        value={newSchedule.interval_minutes || ''}
+                        onChange={(e) => setNewSchedule({ ...newSchedule, interval_minutes: e.target.value })}
+                        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-gray-200 w-36"
+                      />
+                      <input
+                        type="number"
+                        placeholder="hora (0-23)"
+                        value={newSchedule.hour || ''}
+                        onChange={(e) => setNewSchedule({ ...newSchedule, hour: e.target.value })}
+                        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-gray-200 w-36"
+                      />
+                      <button type="submit" className="px-4 py-2 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-black text-sm font-semibold">
+                        + Programar
+                      </button>
+                    </div>
+                  </form>
+                  <div className="space-y-2">
+                    {schedules.length === 0 ? (
+                      <p className="text-sm text-gray-600">Sin jobs programados para este cliente.</p>
+                    ) : schedules.map((s) => (
+                      <div key={s.id} className="flex items-center gap-3 bg-[#151515] border border-[#2a2a2a] rounded-lg px-4 py-3">
+                        <span className="text-yellow-400">⏱</span>
+                        <span className="text-sm text-gray-200 font-mono flex-1">{s.pipeline_id}</span>
+                        <span className="text-xs text-gray-500">
+                          {s.kind === 'daily' ? `diario ${s.hour}:00` : `cada ${s.minutes} min`}
+                        </span>
+                        <button onClick={() => deleteSchedule(s.id)} className="text-gray-500 hover:text-red-400 text-xs">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {activeTab === 'drafts' && (
+                <section className="space-y-3">
+                  <h2 className="text-lg font-semibold text-gray-200">Borradores generados (sin enviar)</h2>
+                  {drafts.length === 0 ? (
+                    <p className="text-sm text-gray-600">Sin borradores. Programa inbox_watcher o leads_to_draft.</p>
+                  ) : drafts.map((d) => (
+                    <div key={d.id} className="bg-[#151515] border border-[#2a2a2a] rounded-lg p-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-emerald-400">📝</span>
+                        <span className="text-gray-200">{d.subject}</span>
+                        <span className="text-gray-500 text-xs ml-auto">para {d.to} · SIMULADO</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2 whitespace-pre-wrap">{d.body}</p>
+                    </div>
+                  ))}
+                </section>
+              )}
+              {activeTab === 'briefings' && (
+                <section className="space-y-3">
+                  <h2 className="text-lg font-semibold text-gray-200">Briefings (Drive)</h2>
+                  {artifacts.length === 0 ? (
+                    <p className="text-sm text-gray-600">Sin briefings. Sincroniza contenido en la carpeta drive del cliente y programa daily_social.</p>
+                  ) : artifacts.map((a) => (
+                    <div key={a.id} className="bg-[#151515] border border-[#2a2a2a] rounded-lg p-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-yellow-400">📄</span>
+                        <span className="text-gray-200">{a.source_file || a.id}</span>
+                        <span className="text-gray-500 text-xs ml-auto">{a.date} · {a.pipeline}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">{a.copy?.slice(0, 160)}...</p>
+                      <p className="text-[10px] text-gray-600 mt-1">
+                        publish: {a.publish?.status} · real: {String(a.publish?.real_execution)}
+                      </p>
+                    </div>
+                  ))}
+                </section>
+              )}
+              {activeTab === 'hoy' && (
+                <section className="space-y-3">
+                  <h2 className="text-lg font-semibold text-gray-200">Hoy</h2>
+                  {artifacts.length === 0 ? (
+                    <p className="text-sm text-gray-600">Sin artefactos de hoy.</p>
+                  ) : (
+                    artifacts.slice(0, 3).map((a) => (
+                      <div key={a.id} className="bg-[#151515] border border-[#2a2a2a] rounded-lg p-4">
+                        <div className="text-sm text-gray-200 font-semibold">{a.source_file || a.id}</div>
+                        <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{a.copy?.slice(0, 300)}</p>
+                      </div>
+                    ))
+                  )}
+                </section>
+              )}
+            </div>
+          )}
         </main>
 
         <footer className="border-t border-[#222] bg-[#111111]/50 backdrop-blur px-6 py-4">

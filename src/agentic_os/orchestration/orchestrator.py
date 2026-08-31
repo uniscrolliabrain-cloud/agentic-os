@@ -61,3 +61,48 @@ class Orchestrator:
         )
 
         return intent
+
+    def handle_pipeline(self, pipeline_id: str, tenant_id: str, executor=None, registry=None) -> dict:
+        """FASE 6: ejecuta un pipeline programado (daily_social, inbox_watcher...).
+
+        El scheduler (o cualquier trigger) llama a este método; el pipeline se
+        resuelve desde el catálogo `orchestration/pipelines` y se ejecuta con
+        el registry de tools del tenant.
+        """
+        from .pipelines import PIPELINES
+
+        if pipeline_id not in PIPELINES:
+            self.log.append(
+                Event(
+                    kind="ScheduledPipelineFailed",
+                    entity_id=f"pipeline://{pipeline_id}",
+                    tenant_id=tenant_id,
+                    actor_id="scheduler",
+                    payload={"error": f"pipeline desconocido: {pipeline_id}"},
+                )
+            )
+            return {"status": "UNKNOWN_PIPELINE", "pipeline_id": pipeline_id}
+
+        if registry is None:
+            registry = self._default_registry()
+        if executor is None:
+            executor = _PipelineExecutorHost(llm=self.llm, registry=registry)
+        fn = PIPELINES[pipeline_id]
+        return fn(executor, registry, tenant_id)
+
+    def _default_registry(self):
+        """Registry por defecto (mocks + bridge) para ejecutar pipelines en
+        ausencia de un registry inyectado por la API."""
+        from ..execution.tools import build_default_registry
+
+        return build_default_registry()
+
+
+class _PipelineExecutorHost:
+    """Host mínimo para que los pipelines lean `_llm` y ejecuten tools sin
+    depender de la API (usado en tests y en el orquestador)."""
+
+    def __init__(self, llm=None, registry=None):
+        self._llm = llm
+        self._pipeline_params = {}
+        self.registry = registry
