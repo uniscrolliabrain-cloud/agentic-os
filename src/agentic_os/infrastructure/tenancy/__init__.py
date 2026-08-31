@@ -1,4 +1,4 @@
-from .models import Tenant, TenantConfig, TenantContext
+from .models import Tenant, TenantConfig, TenantConfigPublic, TenantContext
 from .registry import TenantRegistry
 
-__all__ = ["Tenant", "TenantConfig", "TenantContext", "TenantRegistry"]
+__all__ = ["Tenant", "TenantConfig", "TenantConfigPublic", "TenantContext", "TenantRegistry"]

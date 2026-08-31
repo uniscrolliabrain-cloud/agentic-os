@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     conversations_dir: str = Field(default="data/conversations")
     eventlog_dir: str = Field(default="data/eventlog")
     policies_dir: str = Field(default="data/policies")
+    # Seguridad FASE 1: único disparador del allow-all. ENV=dev NO cambia la
+    # semántica de seguridad. Default false (incluso en dev).
+    dev_allow_all: bool = Field(default=False, alias="DEV_ALLOW_ALL")
 
     # --- Credenciales de conectores (las 40 del .env.example) ---
     # Google

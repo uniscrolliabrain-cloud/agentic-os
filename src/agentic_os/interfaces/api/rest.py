@@ -17,7 +17,7 @@ from ...execution.executor import Executor
 from ...execution.tools import build_default_registry
 from ...infrastructure.config.settings import settings
 from ...infrastructure.persistence import get_eventlog_repo
-from ...infrastructure.tenancy import Tenant, TenantConfig, TenantContext, TenantRegistry
+from ...infrastructure.tenancy import Tenant, TenantConfig, TenantConfigPublic, TenantContext, TenantRegistry
 from ...interfaces.llm.chat import FrontAssistant
 from ...interfaces.llm.provider import GeminiProvider, MockLLMProvider
 from ...kernel.policy.engine import PolicyEngine
@@ -352,7 +352,7 @@ class ToolOut(BaseModel):
 
 @app.get("/api/tenants", response_model=List[TenantOut])
 def list_tenants() -> List[TenantOut]:
-    return [TenantOut(id=t.id, name=t.config.name, slug=t.slug, config=t.config.model_dump(), created_at=t.created_at.isoformat()) for t in _tenant_registry.list_all()]
+    return [TenantOut(id=t.id, name=t.config.name, slug=t.slug, config=TenantConfigPublic.from_config(t.config).model_dump(), created_at=t.created_at.isoformat()) for t in _tenant_registry.list_all()]
 
 @app.post("/api/tenants", response_model=TenantOut, status_code=201)
 def create_tenant(req: TenantCreate) -> TenantOut:
@@ -362,14 +362,14 @@ def create_tenant(req: TenantCreate) -> TenantOut:
         (POLICIES_DIR / f"{tenant.id}.json").touch(exist_ok=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=tenant.config.model_dump(), created_at=tenant.created_at.isoformat())
+    return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=TenantConfigPublic.from_config(tenant.config).model_dump(), created_at=tenant.created_at.isoformat())
 
 @app.get("/api/tenants/{tenant_id}", response_model=TenantOut)
 def get_tenant(tenant_id: str) -> TenantOut:
     tenant = _tenant_registry.get(tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
-    return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=tenant.config.model_dump(), created_at=tenant.created_at.isoformat())
+    return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=TenantConfigPublic.from_config(tenant.config).model_dump(), created_at=tenant.created_at.isoformat())
 
 @app.patch("/api/tenants/{tenant_id}", response_model=TenantOut)
 def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
@@ -385,7 +385,7 @@ def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
         new_config = TenantConfig(**merged)
     updated = Tenant(id=tenant.id, slug=tenant.slug, config=new_config, created_at=tenant.created_at)
     _tenant_registry.update(updated)
-    return TenantOut(id=updated.id, name=updated.config.name, slug=updated.slug, config=updated.config.model_dump(), created_at=updated.created_at.isoformat())
+    return TenantOut(id=updated.id, name=updated.config.name, slug=updated.slug, config=TenantConfigPublic.from_config(updated.config).model_dump(), created_at=updated.created_at.isoformat())
 
 @app.delete("/api/tenants/{tenant_id}")
 def delete_tenant(tenant_id: str) -> Dict[str, str]:

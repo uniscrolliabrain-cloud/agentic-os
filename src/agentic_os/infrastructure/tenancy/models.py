@@ -41,6 +41,37 @@ class Tenant(BaseModel):
     created_at: datetime = Field(default_factory=now_utc)
 
 
+class TenantConfigPublic(BaseModel):
+    """Vista pública del config de un tenant: NUNCA expone credentials.
+
+    Sustituye a config=s.model_dump() en los endpoints. Si el frontend necesita
+    saber si un provider está conectado, usa connected_providers (solo nombres).
+    La clase TenantConfig SÍ guarda credentials; esta NO la incluye ni enmascara.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    domain: str
+    logo: Optional[str] = None
+    primary_color: str = "#facc15"
+    data_dir: str
+    enabled_capabilities: list[str] = Field(default_factory=list)
+    connected_providers: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_config(cls, config: TenantConfig) -> "TenantConfigPublic":
+        return cls(
+            name=config.name,
+            domain=config.domain,
+            logo=config.logo,
+            primary_color=config.primary_color,
+            data_dir=config.data_dir,
+            enabled_capabilities=list(config.enabled_capabilities),
+            connected_providers=sorted(config.credentials.keys()),
+        )
+
+
 class TenantContext(BaseModel):
     """El contexto activo de un tenant durante una petición/ejecución."""
 

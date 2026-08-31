@@ -13,12 +13,15 @@ from...infrastructure.config.settings import settings
 def default_policy(tenant_id: str = "default") -> Policy:
     """
     Política por defecto POR TENANT.
-    - En dev: allow-all para poder arrancar.
-    - En prod: deny-all. Nunca capability="*" global.
-    """
-    is_dev = settings.env == "dev"
 
-    if is_dev:
+    El allow-all SOLO se activa con DEV_ALLOW_ALL=true (flag explícito, default false).
+    ENV=dev por sí solo NO cambia la semántica de seguridad: en ausencia de
+    DEV_ALLOW_ALL, la política por defecto es deny-all incluso en dev.
+
+    Nota de seguridad (Fase 1 hardening): antes esto disparaba allow-all
+    automáticamente con settings.env == "dev", lo que era un allow-all implícito.
+    """
+    if _dev_allow_all():
         return Policy(
             id=f"default-{tenant_id}",
             name=f"default-allow-{tenant_id}",
@@ -28,17 +31,26 @@ def default_policy(tenant_id: str = "default") -> Policy:
                     capability="*",
                     effect="allow",
                     requires_roles=[],
-                    description=f"Default allow SOLO en dev para tenant {tenant_id}",
+                    description=(
+                        f"Default allow SOLO con DEV_ALLOW_ALL=true "
+                        f"(tenant {tenant_id}), para desarrollo sin tenants configurados"
+                    ),
                 )
             ],
         )
-    else:
-        # Prod: sin reglas = deny by default
-        return Policy(
-            id=f"default-{tenant_id}",
-            name=f"default-deny-{tenant_id}",
-            rules=[],
-        )
+    # Sin DEV_ALLOW_ALL: sin reglas = deny by default (también en dev)
+    return Policy(
+        id=f"default-{tenant_id}",
+        name=f"default-deny-{tenant_id}",
+        rules=[],
+    )
+
+def _dev_allow_all() -> bool:
+    """Flag explicito. ENV=dev NO lo activa.
+    
+    Nota (Fase 1 hardening): esto es el UNICO disparador del allow-all.
+    """
+    return os.environ.get("DEV_ALLOW_ALL", "false").lower() in ("1", "true", "yes")
 
 class PolicyEngine:
     """Motor de políticas determinista con aislamiento multi-tenant."""
@@ -47,6 +59,14 @@ class PolicyEngine:
         self.tenant_id = tenant_id
         self.policy = policy or default_policy(tenant_id)
         self.evaluator = PolicyEvaluator(self.policy)
+
+    def _get_tenant(self, tenant_id: str):
+        """Resuelve el Tenant (para leer enabled_capabilities) o None sin dep fuerte de tenancy."""
+        try:
+            from ...infrastructure.tenancy import TenantRegistry
+            return TenantRegistry().get(tenant_id)
+        except Exception:
+            return None
 
     def _load_tenant_policy(self, tenant_id: str) -> Optional[Policy]:
         """Intenta cargar data/policies/{tenant_id}.json si existe."""
@@ -65,20 +85,29 @@ class PolicyEngine:
         resource_kind: Optional[str] = None,
         roles: Optional[list[str]] = None,
     ) -> Decision:
-        # En prod, si estamos con default allow-all, denegar
-        if settings.env!= "dev":
+        # Si la política es allow-all pero sin DEV_ALLOW_ALL, denegar.
+        if not _dev_allow_all():
             if any(r.capability == "*" and r.effect == "allow" for r in self.policy.rules):
-                # Estamos en prod con política de dev -> bloquear
-                from.models import Decision as DecisionModel # evitar circular si existe
-                # Creamos decision manual deny
-                return Decision(effect="deny", reason="default-allow no permitido en prod")
+                return Decision(effect="deny", reason="allow-all sin DEV_ALLOW_ALL")
 
         return self.evaluator.evaluate(capability, resource_kind, roles or [])
 
     def is_allowed(self, tenant_id: str, action: str) -> bool:
         """
-        AHORA SÍ mira policy del tenant. No global.
+        AHORA SÍ mira policy del tenant + enabled_capabilities.
+        No decide por el engine global de otro tenant.
         """
+        # 0. enabled_capabilities del tenant (aislamiento real): si la capability
+        # no está habilitada para este tenant, deny — incluso con DEV_ALLOW_ALL.
+        tenant = self._get_tenant(tenant_id)
+        if tenant is not None:
+            enabled = list(tenant.config.enabled_capabilities)
+            if enabled and action not in enabled:
+                return False
+            if not enabled:
+                # Sin capabilities habilitadas: deny (el tenant no participa del allow-all)
+                return False
+
         # 1. Intentar cargar policy específica del tenant
         tenant_policy = self._load_tenant_policy(tenant_id)
         if tenant_policy:
@@ -96,8 +125,8 @@ class PolicyEngine:
         evaluator = PolicyEvaluator(default)
         decision = evaluator.evaluate(action, None, [])
 
-        # En prod, default es deny
-        if settings.env!= "dev":
+        # Sin DEV_ALLOW_ALL, default es deny (también en dev)
+        if not _dev_allow_all():
             return False
 
         return decision.effect == "allow"
@@ -109,19 +138,29 @@ class PolicyEngine:
         resource_kind: Optional[str] = None,
         roles: Optional[list[str]] = None,
     ) -> Decision:
-        """Evalúa una capability contra la policy del tenant (o default deny en prod).
+        """Evalúa una capability contra la policy del tenant (o default deny).
 
         Aislamiento multi-tenant real: nunca se usa una regla de un tenant distinto
-        para decidir sobre otro.
+        para decidir sobre otro, y enabled_capabilities del tenant es parte de la
+        decisión: si la capability no está habilitada, deny (incluso con DEV_ALLOW_ALL).
         """
+        # 0. enabled_capabilities antes de cualquier otra regla
+        tenant = self._get_tenant(tenant_id)
+        if tenant is not None:
+            enabled = list(tenant.config.enabled_capabilities)
+            if enabled and capability not in enabled:
+                return Decision(effect="deny", reason=f"{capability} no habilitada para tenant {tenant_id}")
+            if not enabled:
+                return Decision(effect="deny", reason=f"tenant {tenant_id} sin capabilities habilitadas")
+
         policy = self._load_tenant_policy(tenant_id)
         if policy is None:
             policy = default_policy(tenant_id)
 
-        # En prod, si la política resultante es allow-all (herencia de dev), negar.
-        if settings.env != "dev":
+        # Si la política resultante es allow-all pero sin DEV_ALLOW_ALL, negar.
+        if not _dev_allow_all():
             if any(r.capability == "*" and r.effect == "allow" for r in policy.rules):
-                return Decision(effect="deny", reason=f"default-allow no permitido en prod para {tenant_id}")
+                return Decision(effect="deny", reason=f"allow-all sin DEV_ALLOW_ALL no permitido para {tenant_id}")
 
         evaluator = PolicyEvaluator(policy)
         return evaluator.evaluate(capability, resource_kind, roles or [])
