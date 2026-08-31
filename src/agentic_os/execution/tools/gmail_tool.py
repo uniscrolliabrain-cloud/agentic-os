@@ -24,7 +24,8 @@ class GmailSendTool(Tool):
             raise ToolValidationError("faltan campos: to y subject son obligatorios")
 
         return {
-            "status": "enviado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "to": to,
             "subject": subject,
             "body_preview": body[:80],
@@ -44,7 +45,8 @@ class GmailReadTool(Tool):
 
         # Mock: devuelve 2 emails simulados
         return {
-            "status": "leido",
+            "status": "SIMULATED",
+            "real_execution": False,
             "query": query,
             "max_results": max_results,
             "messages": [

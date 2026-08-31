@@ -10,14 +10,14 @@ La infraestructura está preparada para recibir credenciales reales vía
 
 from __future__ import annotations
 
-from .credential_store import CredentialStore, EncryptedStore
+from .credential_store import CredentialStore, EncodedFileCredentialStore
 from .token_manager import TokenManager
 from .oauth_manager import OAuthManager
 from .credential_resolver import CredentialResolver
 
 __all__ = [
     "CredentialStore",
-    "EncryptedStore",
+    "EncodedFileCredentialStore",
     "TokenManager",
     "OAuthManager",
     "CredentialResolver",

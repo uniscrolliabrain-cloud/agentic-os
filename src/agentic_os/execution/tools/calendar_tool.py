@@ -21,7 +21,8 @@ class CalendarCreateEventTool(Tool):
             raise ToolValidationError("faltan campos: title y start son obligatorios")
 
         return {
-            "status": "creado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "title": title,
             "start": start,
             "end": end or start,
@@ -40,7 +41,8 @@ class CalendarListEventsTool(Tool):
         max_results = int(params.get("max_results", 5))
 
         return {
-            "status": "listado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "max_results": max_results,
             "events": [
                 {

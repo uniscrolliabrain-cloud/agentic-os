@@ -21,7 +21,8 @@ class WebScrapeTool(Tool):
             raise ToolValidationError("falta el campo url")
 
         return {
-            "status": "scrapeado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "url": url,
             "title": "Ejemplo de página",
             "content_preview": "Contenido extraído de la página...",
@@ -43,7 +44,8 @@ class WebSearchTool(Tool):
             raise ToolValidationError("falta el campo query")
 
         return {
-            "status": "buscado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "query": query,
             "max_results": max_results,
             "results": [

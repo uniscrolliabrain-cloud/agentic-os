@@ -21,7 +21,7 @@ from .core.rate_limiter import RateLimiter
 from .core.retry import RetryEngine
 from .core.audit import AuditLog
 from .core.telemetry import EventRecorder
-from .auth.credential_store import CredentialStore, EncryptedStore
+from .auth.credential_store import CredentialStore, EncodedFileCredentialStore
 from .auth.token_manager import TokenManager
 from .auth.oauth_manager import OAuthManager
 from .auth.credential_resolver import CredentialResolver
@@ -41,7 +41,7 @@ __all__ = [
     "AuditLog",
     "EventRecorder",
     "CredentialStore",
-    "EncryptedStore",
+    "EncodedFileCredentialStore",
     "TokenManager",
     "OAuthManager",
     "CredentialResolver",

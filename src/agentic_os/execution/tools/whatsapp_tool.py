@@ -19,7 +19,8 @@ class WhatsAppSendTool(Tool):
             raise ToolValidationError("faltan campos: to y text son obligatorios")
 
         return {
-            "status": "enviado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "to": to,
             "text_preview": text[:80],
             "sent_at": datetime.utcnow().isoformat(),
@@ -37,7 +38,8 @@ class WhatsAppReadTool(Tool):
         limit = int(params.get("limit", 5))
 
         return {
-            "status": "leido",
+            "status": "SIMULATED",
+            "real_execution": False,
             "contact": contact,
             "limit": limit,
             "messages": [

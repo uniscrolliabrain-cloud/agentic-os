@@ -19,7 +19,8 @@ class SlackSendTool(Tool):
             raise ToolValidationError("faltan campos: channel y text son obligatorios")
 
         return {
-            "status": "enviado",
+            "status": "SIMULATED",
+            "real_execution": False,
             "channel": channel,
             "text_preview": text[:80],
             "sent_at": datetime.utcnow().isoformat(),
@@ -37,7 +38,8 @@ class SlackReadTool(Tool):
         limit = int(params.get("limit", 5))
 
         return {
-            "status": "leido",
+            "status": "SIMULATED",
+            "real_execution": False,
             "channel": channel,
             "limit": limit,
             "messages": [

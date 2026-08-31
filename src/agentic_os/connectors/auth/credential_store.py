@@ -8,18 +8,29 @@ from typing import Dict
 from ..core.config import CredentialSet
 
 
-def _cred_path(workspace: str, provider: str) -> Path:
+def _cred_path(workspace: str, provider: str, base: Path | None = None) -> Path:
+    """Resuelve la ruta del fichero de credenciales.
+
+    Usa SIEMPRE el `base` de la instancia CredentialStore cuando se aporta,
+    para que un CredentialStore(cred_dir=...) no ignore su propio directorio
+    releyendo la variable de entorno.
+    """
+    if base is not None:
+        return Path(base) / workspace / f"{provider}.json"
     import os
 
-    base = os.environ.get("CONNECTOR_CRED_DIR") or ".credentials"
-    return Path(base) / workspace / f"{provider}.json"
+    fallback = os.environ.get("CONNECTOR_CRED_DIR") or ".credentials"
+    return Path(fallback) / workspace / f"{provider}.json"
 
 
-class EncryptedStore:
-    """Almacenamiento básico de credenciales en disco (codificado base64).
+class EncodedFileCredentialStore:
+    """Codificación base64 de credenciales en disco — NO es encriptación.
 
-    Para producción, reemplazar con encriptación real (Vault, AWS KMS, etc).
+    TODO(security): para producción reemplazar por un secret manager real
+    (HashiCorp Vault, AWS KMS, GCP Secret Manager) con rotación y auditoría.
     """
+
+    # TODO(security): migrar a Vault/KMS antes de conectar providers reales.
 
     @staticmethod
     def encrypt(value: str) -> str:
@@ -48,12 +59,12 @@ class CredentialStore:
         self.cred_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, workspace: str, provider: str, credential_set: CredentialSet) -> None:
-        path = _cred_path(workspace, provider)
+        path = _cred_path(workspace, provider, self.cred_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "provider": provider,
             "auth_type": credential_set.auth_type,
-            "data": {k: EncryptedStore.encrypt(str(v)) for k, v in credential_set.data.items()},
+            "data": {k: EncodedFileCredentialStore.encrypt(str(v)) for k, v in credential_set.data.items()},
             "expires_at": credential_set.expires_at.isoformat() if credential_set.expires_at else None,
             "scopes": credential_set.scopes,
         }
@@ -61,12 +72,12 @@ class CredentialStore:
             json.dump(data, f)
 
     def load(self, workspace: str, provider: str) -> "CredentialSet | None":
-        path = _cred_path(workspace, provider)
+        path = _cred_path(workspace, provider, self.cred_dir)
         if not path.exists():
             return None
         with open(path) as f:
             data = json.load(f)
-        cred_data = {k: EncryptedStore.decrypt(v) for k, v in data.get("data", {}).items()}
+        cred_data = {k: EncodedFileCredentialStore.decrypt(v) for k, v in data.get("data", {}).items()}
         expires = None
         if data.get("expires_at"):
             try:
@@ -84,7 +95,7 @@ class CredentialStore:
         )
 
     def delete(self, workspace: str, provider: str) -> bool:
-        path = _cred_path(workspace, provider)
+        path = _cred_path(workspace, provider, self.cred_dir)
         if path.exists():
             path.unlink()
             return True

@@ -25,10 +25,22 @@ class PolicyEvaluator:
 
     Si ninguna regla coincide, la acción se DENIEGA por defecto (default-deny):
     el sistema nunca permite algo que no esté explícitamente estipulado.
+
+    INVARIANTE DEL KERNEL (no negociable): las acciones destructivas o de
+    publicación (delete/publish) SIEMPRE requieren aprobación humana. Una
+    regla explícita puede añadir más restricciones, nunca quitar esta.
     """
+
+    # Segmentos de capability que activan el invariante de aprobación humana.
+    INVARIANT_APPROVAL_SEGMENTS = frozenset({"delete", "publish"})
 
     def __init__(self, policy):
         self.policy = policy
+
+    @staticmethod
+    def _requires_human_approval(capability: str) -> bool:
+        segments = {seg.lower() for seg in capability.split(".")}
+        return bool(segments & PolicyEvaluator.INVARIANT_APPROVAL_SEGMENTS)
 
     def evaluate(self, capability: str, resource_kind: Optional[str], roles: list[str]) -> Decision:
         for rule in self.policy.rules:
@@ -38,5 +50,13 @@ class PolicyEvaluator:
                 continue
             if rule.requires_roles and not any(r in roles for r in rule.requires_roles):
                 continue
-            return Decision(effect=rule.effect, rule_id=rule.id, reason=rule.description)
+            effect = rule.effect
+            # Invariante del kernel: una regla puede endurecer, nunca suavizar.
+            if effect == "allow" and self._requires_human_approval(capability):
+                return Decision(
+                    effect="require_approval",
+                    rule_id=rule.id,
+                    reason=f"invariante del kernel: '{capability}' es destructiva/publicable y exige aprobación humana",
+                )
+            return Decision(effect=effect, rule_id=rule.id, reason=rule.description)
         return Decision(effect="deny", reason="no matching rule")

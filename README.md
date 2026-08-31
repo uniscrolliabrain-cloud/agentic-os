@@ -121,7 +121,8 @@ El LLM **nunca ejecuta directamente**: solo propone. La policy decide, el execut
 Bajo `src/agentic_os/connectors/` vive el **kernel de conectores**: la frontera de
 ejecución cerrada entre los agentes y el mundo real. **Los 44 providers están
 creados pero SIN conectar** — el código nunca contiene credenciales; se inyectan
-vía `.env`/CredentialStore cuando toque.
+vía `.env`/CredentialStore cuando toque. Conteo exacto del catálogo:
+**44 providers · 265 mappings provider-capability · ~187 capabilities canónicas únicas.**
 
 ```
 MiniAgente → capability canónica → Command (Pydantic)

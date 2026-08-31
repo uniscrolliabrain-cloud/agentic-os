@@ -13,10 +13,14 @@ vocabulary:
     - genera
     - programa
   # capabilities del dominio: mapean a capacities canonicas reales del registry
+  # NOTA: el catalogo canónico no tiene crm.lead.* ni marketing.campaign.*;
+  # los mapeos elegidos son los semanticamente más proximos disponibles:
+  #   - "lead" -> crm.contact.* (en HubSpot los leads son contacts)
+  #   - "campana" -> ads.campaign.* (Meta Ads) / ads.insights.get para lectura
   capabilities:
-    - { name: crm.lead.create,   entity: lead,   action: create,    canonical: crm.deal.create,        tools: [hubspot] }
-    - { name: crm.lead.read,     entity: lead,   action: read,      canonical: crm.deal.read,          tools: [hubspot] }
-    - { name: crm.cita.create,   entity: cita,   action: create,    canonical: calendar.event.create,  tools: [google] }
-    - { name: crm.cita.read,     entity: cita,   action: read,      canonical: calendar.event.read,    tools: [google] }
-    - { name: crm.campana.create, entity: campana, action: create,  canonical: crm.contact.create,     tools: [salesforce] }
-    - { name: crm.campana.read,  entity: campana, action: read,     canonical: crm.contact.read,       tools: [salesforce] }
+    - { name: crm.lead.create,   entity: lead,   action: create,    canonical: crm.contact.create,    tools: [hubspot] }
+    - { name: crm.lead.read,     entity: lead,   action: read,      canonical: crm.contact.read,      tools: [hubspot] }
+    - { name: crm.cita.create,   entity: cita,   action: create,    canonical: calendar.event.create, tools: [google] }
+    - { name: crm.cita.read,     entity: cita,   action: read,      canonical: calendar.event.read,   tools: [google] }
+    - { name: crm.campana.create, entity: campana, action: create,  canonical: ads.campaign.create,   tools: [meta] }
+    - { name: crm.campana.read,  entity: campana, action: read,     canonical: ads.insights.get,      tools: [meta] }
