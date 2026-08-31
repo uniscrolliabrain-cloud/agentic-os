@@ -23,6 +23,7 @@ from ...interfaces.llm.provider import GeminiProvider, MockLLMProvider
 from ...kernel.policy.engine import PolicyEngine
 from ...kernel.world.events import Event
 from ...orchestration.orchestrator import Orchestrator
+from ...orchestration.scheduler import Scheduler
 
 app = FastAPI(title="Agentic OS", version="0.1.0")
 
@@ -405,7 +406,34 @@ def delete_conversation(conv_id: str, scope: str = Depends(tenant_scope)) -> Dic
 
 _tenant_registry = TenantRegistry()
 _policy_engine = PolicyEngine()
-_executor = Executor(registry=build_default_registry(), policy_engine=_policy_engine, event_log=_event_log)
+
+# FASE 6: scheduler real por tenant. El trigger ejecuta el pipeline con el
+# registry/executor del módulo (resuelto en runtime, no en import).
+_scheduler = Scheduler(data_dir=DATA_DIR, event_log=_event_log, on_trigger=None)
+
+
+def _run_scheduled_pipeline(pipeline_id: str, tenant_id: str) -> dict:
+    """Callback del scheduler: ejecuta el pipeline auditando en el EventLog."""
+    if tenant_id != "system" and _tenant_registry.get(tenant_id) is None:
+        result = {"status": "TENANT_NOT_FOUND", "tenant_id": tenant_id}
+    else:
+        result = _orchestrator.handle_pipeline(
+            pipeline_id, tenant_id, executor=_executor, registry=_executor.registry
+        )
+    _event_log.append(
+        Event(
+            kind="ScheduledPipelineFinished",
+            entity_id=f"pipeline://{pipeline_id}",
+            tenant_id=tenant_id,
+            actor_id="scheduler",
+            payload={"pipeline_id": pipeline_id, "status": result.get("status")},
+        )
+    )
+    return result
+
+
+_scheduler.on_trigger = _run_scheduled_pipeline
+_executor = Executor(registry=build_default_registry(scheduler=_scheduler), policy_engine=_policy_engine, event_log=_event_log)
 
 class TenantCreate(BaseModel):
     name: str
@@ -508,3 +536,103 @@ def execute(req: ExecuteRequest, scope: str = Depends(tenant_scope)) -> ExecuteR
         return ExecuteResponse(success=True, result=result)
     except Exception as e:
         return ExecuteResponse(success=False, result=None, error=str(e))
+
+
+# ---------------------------------------------------------------- FASE 6 ----
+# Scheduler (jobs por tenant) y artefactos/drafts por tenant.
+
+class ScheduleCreate(BaseModel):
+    pipeline_id: str
+    interval_minutes: Optional[int] = None
+    hour: Optional[int] = None
+
+
+class ScheduleOut(BaseModel):
+    id: str
+    tenant_id: str
+    pipeline_id: str
+    kind: str
+    hour: Optional[int] = None
+    minutes: Optional[int] = None
+
+
+@app.get("/api/schedules", response_model=List[ScheduleOut])
+def list_schedules(scope: str = Depends(tenant_scope)) -> List[ScheduleOut]:
+    """Schedules del tenant de la petición — nunca de otros tenants."""
+    return [
+        ScheduleOut(
+            id=s["id"],
+            tenant_id=s["tenant_id"],
+            pipeline_id=s["pipeline_id"],
+            kind=s["kind"],
+            hour=s.get("hour"),
+            minutes=s.get("minutes"),
+        )
+        for s in _scheduler.list_schedules(scope)
+    ]
+
+
+@app.post("/api/schedules", response_model=ScheduleOut, status_code=201)
+def create_schedule(req: ScheduleCreate, scope: str = Depends(tenant_scope)) -> ScheduleOut:
+    if not req.pipeline_id:
+        raise HTTPException(status_code=400, detail="pipeline_id es obligatorio")
+    if (req.interval_minutes is None) == (req.hour is None):
+        raise HTTPException(status_code=400, detail="indica interval_minutes o hour (no ambos/ninguno)")
+    if req.hour is not None:
+        record = _scheduler.schedule_daily(scope, req.pipeline_id, int(req.hour))
+    else:
+        record = _scheduler.schedule_interval(scope, req.pipeline_id, int(req.interval_minutes or 0))
+    return ScheduleOut(
+        id=record["id"], tenant_id=record["tenant_id"], pipeline_id=record["pipeline_id"],
+        kind=record["kind"], hour=record.get("hour"), minutes=record.get("minutes"),
+    )
+
+
+@app.delete("/api/schedules/{schedule_id}")
+def delete_schedule(schedule_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
+    if not _scheduler.remove_schedule(scope, schedule_id):
+        raise HTTPException(status_code=404, detail="Schedule no encontrado")
+    return {"status": "deleted", "id": schedule_id}
+
+
+@app.get("/api/drafts")
+def list_drafts(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
+    """Drafts de email del tenant (creados por pipelines SIMULADOS)."""
+    drafts_dir = TENANTS_DATA_DIR / scope / "drafts"
+    drafts: List[Dict[str, Any]] = []
+    if drafts_dir.exists():
+        for p in sorted(drafts_dir.glob("*.json")):
+            try:
+                with open(p, "r", encoding="utf-8") as fh:
+                    drafts.append(json.load(fh))
+            except (OSError, json.JSONDecodeError):
+                continue
+    return drafts
+
+
+@app.get("/api/artifacts")
+def list_artifacts(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
+    """Lista artefactos del tenant (pipeline daily_social etc)."""
+    artifacts_dir = TENANTS_DATA_DIR / scope / "artifacts"
+    out: List[Dict[str, Any]] = []
+    if artifacts_dir.exists():
+        for p in sorted(artifacts_dir.rglob("*.json")):
+            try:
+                with open(p, "r", encoding="utf-8") as fh:
+                    out.append(json.load(fh))
+            except (OSError, json.JSONDecodeError):
+                continue
+    return out
+
+
+@app.get("/api/artifacts/{tenant_id}/{artifact_id}")
+def get_artifact(tenant_id: str, artifact_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
+    """Artefacto de un pipeline. FASE 4: el tenant del path debe coincidir con el scope."""
+    if tenant_id != scope:
+        raise HTTPException(status_code=403, detail="No autorizado para este tenant")
+    artifacts_dir = TENANTS_DATA_DIR / scope / "artifacts"
+    for p in artifacts_dir.glob(f"*/*.json"):
+        if p.stem == artifact_id:
+            with open(p, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+    raise HTTPException(status_code=404, detail="Artefacto no encontrado")
