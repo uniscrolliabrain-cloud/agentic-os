@@ -41,8 +41,29 @@ ALL_TOOLS = [
 
 
 def build_default_registry() -> ToolRegistry:
-    """Construye un ToolRegistry con todas las tools disponibles."""
+    """Construye el ToolRegistry unificado (FASE 2 de hardening).
+
+    Fuente de verdad de qué capabilities existen: el Connector Kernel
+    (CapabilityRegistry construido desde ConnectorFactory + catálogo).
+    Si la capability canónica de una tool existe en el kernel, la resolución
+    va SIEMPRE por ConnectorRouter (ConnectorBridgeTool); el mock de
+    execution/tools/*.py es solo el fallback para capabilities sin connector.
+    """
+    from .connector_bridge import (
+        CANONICAL_ALIASES,
+        ConnectorBridgeTool,
+        build_connector_router,
+    )
+
+    router = build_connector_router()
     registry = ToolRegistry()
     for tool in ALL_TOOLS:
-        registry.register(tool)
+        capability = CANONICAL_ALIASES.get(tool.name)
+        if capability and router.registry.has_capability(capability):
+            registry.register(
+                ConnectorBridgeTool(name=tool.name, capability=capability, router=router)
+            )
+        else:
+            # Fallback: mock determinista (capability sin connector registrado)
+            registry.register(tool)
     return registry
