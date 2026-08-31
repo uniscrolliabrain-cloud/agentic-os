@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
-from .base import Tool
+from .base import Tool, ToolValidationError
 
 
 class GmailSendTool(Tool):
@@ -21,7 +21,7 @@ class GmailSendTool(Tool):
         body = params.get("body", "")
 
         if not to or not subject:
-            return {"error": "faltan campos: to y subject son obligatorios"}
+            raise ToolValidationError("faltan campos: to y subject son obligatorios")
 
         return {
             "status": "enviado",

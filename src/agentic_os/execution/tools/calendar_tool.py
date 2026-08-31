@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
-from .base import Tool
+from .base import Tool, ToolValidationError
 
 
 class CalendarCreateEventTool(Tool):
@@ -18,7 +18,7 @@ class CalendarCreateEventTool(Tool):
         attendees = params.get("attendees", [])
 
         if not title or not start:
-            return {"error": "faltan campos: title y start son obligatorios"}
+            raise ToolValidationError("faltan campos: title y start son obligatorios")
 
         return {
             "status": "creado",

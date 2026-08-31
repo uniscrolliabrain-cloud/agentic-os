@@ -35,3 +35,7 @@ class JsonlEventLog(EventLogRepository):
                     if line.strip():
                         events.append(Event.model_validate_json(line))
         return events
+
+    def all_events(self) -> List[Event]:
+        """FASE 3.1: método común de interfaz (delegado en list_all)."""
+        return self.list_all()

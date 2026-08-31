@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
-from .base import Tool
+from .base import Tool, ToolValidationError
 
 
 class WhatsAppSendTool(Tool):
@@ -16,7 +16,7 @@ class WhatsAppSendTool(Tool):
         text = params.get("text", "")
 
         if not to or not text:
-            return {"error": "faltan campos: to y text son obligatorios"}
+            raise ToolValidationError("faltan campos: to y text son obligatorios")
 
         return {
             "status": "enviado",

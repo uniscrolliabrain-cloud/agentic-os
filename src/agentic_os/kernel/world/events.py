@@ -47,6 +47,16 @@ class EventLog(BaseModel):
         with self._lock:
             return [ev for ev in self.events if ev.tenant_id == tenant_id]
 
+    def all_events(self) -> List[Event]:
+        """FASE 3.1: método común de la interfaz EventLogRepository.
+
+        Bugfix de tipo en kernel/ (no feature): antes replay() leía
+        `.events` directamente, atributo que no existe en JsonlEventLog ni
+        en PostgresEventLog -> AttributeError en runtime. Devuelve copia.
+        """
+        with self._lock:
+            return list(self.events)
+
     def __len__(self):
         with self._lock:
             return len(self.events)

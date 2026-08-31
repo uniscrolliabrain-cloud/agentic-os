@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from typing import Any
+
 from ..kernel.world.replay import replay
-from ..kernel.world.events import Event, EventLog
+from ..kernel.world.events import Event
 from ..cognition.roles.library import LIBRARY
 from ..cognition.planning.intent import Intent
 from ..interfaces.llm.provider import BaseLLMProvider
 
 
 class Orchestrator:
-    def __init__(self, log: EventLog, llm: BaseLLMProvider):
+    def __init__(self, log: Any, llm: BaseLLMProvider):
+        """`log` acepta cualquier EventLogRepository (in-memory, JSONL o
+        Postgres). FASE 3.1: tick()/replay usan la interfaz común
+        all_events(), nunca el atributo concreto `.events`."""
         self.log = log
         self.llm = llm
         self.current_role = LIBRARY["director"]

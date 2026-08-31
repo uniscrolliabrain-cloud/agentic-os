@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
-from .base import Tool
+from .base import Tool, ToolValidationError
 
 
 class SlackSendTool(Tool):
@@ -16,7 +16,7 @@ class SlackSendTool(Tool):
         text = params.get("text", "")
 
         if not channel or not text:
-            return {"error": "faltan campos: channel y text son obligatorios"}
+            raise ToolValidationError("faltan campos: channel y text son obligatorios")
 
         return {
             "status": "enviado",

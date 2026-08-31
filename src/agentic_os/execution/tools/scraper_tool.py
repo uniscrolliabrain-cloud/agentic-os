@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from .base import Tool
+from .base import Tool, ToolValidationError
 
 
 class WebScrapeTool(Tool):
@@ -18,7 +18,7 @@ class WebScrapeTool(Tool):
         url = params.get("url", "")
 
         if not url:
-            return {"error": "falta el campo url"}
+            raise ToolValidationError("falta el campo url")
 
         return {
             "status": "scrapeado",
@@ -40,7 +40,7 @@ class WebSearchTool(Tool):
         max_results = int(params.get("max_results", 5))
 
         if not query:
-            return {"error": "falta el campo query"}
+            raise ToolValidationError("falta el campo query")
 
         return {
             "status": "buscado",

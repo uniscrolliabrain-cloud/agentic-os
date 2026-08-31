@@ -314,7 +314,7 @@ def delete_conversation(conv_id: str) -> Dict[str, str]:
 
 _tenant_registry = TenantRegistry()
 _policy_engine = PolicyEngine()
-_executor = Executor(registry=build_default_registry(), policy_engine=_policy_engine)
+_executor = Executor(registry=build_default_registry(), policy_engine=_policy_engine, event_log=_event_log)
 
 class TenantCreate(BaseModel):
     name: str

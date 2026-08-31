@@ -143,6 +143,10 @@ class PostgresEventLog(EventLogRepository):
                 logger.error("Postgres list_all fallo: %s", exc)
                 return self._fallback.list_all()
 
+    def all_events(self) -> List[Event]:
+        """FASE 3.1: método común de interfaz (equivalente a list_all)."""
+        return self.list_all()
+
     # ------------------------------------------------------- helpers -------
     @staticmethod
     def _row_to_event(row: Any) -> Event:
