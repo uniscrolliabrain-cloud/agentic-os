@@ -12,9 +12,11 @@ function App() {
   const [showEvents, setShowEvents] = useState(false)
   const [events, setEvents] = useState([])
 
-  // Multi-tenant
+  // Multi-tenant & Auth
   const [tenants, setTenants] = useState([])
   const [activeTenant, setActiveTenant] = useState(null)
+  const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || '')
+  const [tenantApiKey, setTenantApiKey] = useState(() => localStorage.getItem('tenant_api_key') || '')
   const [skills, setSkills] = useState([])
   const [tools, setTools] = useState([])
   const [execResult, setExecResult] = useState(null)
@@ -30,10 +32,16 @@ function App() {
 
   const bottomRef = useRef(null)
 
-  // FASE 4: el tenant activo viaja en la cabecera X-Tenant-Id, nunca en el body
+  // FASE 4: cabeceras de tenant y autenticación
   function headersWithTenant(extra = {}) {
     const h = { ...extra }
-    if (activeTenant) h['X-Tenant-Id'] = activeTenant
+    if (activeTenant) {
+      h['X-Tenant-Id'] = activeTenant
+      if (tenantApiKey) h['X-Api-Key'] = tenantApiKey
+    }
+    if (adminKey) {
+      h['X-Admin-Key'] = adminKey
+    }
     return h
   }
 
@@ -193,19 +201,27 @@ function App() {
   async function createTenant() {
     const name = prompt('Nombre del cliente:')
     if (!name) return
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const slug = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/(^-|-$)/g, '')
     try {
       const res = await fetch(`${API_BASE}/api/tenants`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headersWithTenant({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ name, slug }),
       })
       if (res.ok) {
         const t = await res.json()
         setTenants([...tenants, t])
         setActiveTenant(t.id)
+        if (t.api_key) {
+          setTenantApiKey(t.api_key)
+          localStorage.setItem('tenant_api_key', t.api_key)
+          alert(`Cliente registrado exitosamente.\nAPI Key generada: ${t.api_key}\n(Guardada automáticamente para tus peticiones)`)
+        }
+      } else {
+        const err = await res.json()
+        alert(`Error al crear cliente: ${err.detail || 'Fallo de autenticación o validación'}`)
       }
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e); alert(String(e)) }
   }
 
   async function runAction(action, params) {

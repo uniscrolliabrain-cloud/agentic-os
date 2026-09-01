@@ -50,6 +50,7 @@ for d in (CONVERSATIONS_DIR, TENANTS_DATA_DIR, EVENTLOG_DIR, POLICIES_DIR):
 # esta fase es cerrar la fuga de datos entre tenants en las lecturas.
 _TENANT_HEADER = "X-Tenant-Id"
 _API_KEY_HEADER = "X-Api-Key"
+_ADMIN_KEY_HEADER = "X-Admin-Key"
 
 # tenant virtual por defecto para peticiones anónimas (back-compat en dev)
 _DEFAULT_SCOPE = "system"
@@ -58,22 +59,53 @@ _DEFAULT_SCOPE = "system"
 def tenant_scope(
     x_tenant_id: Optional[str] = Header(default=None, alias=_TENANT_HEADER),
     x_api_key: Optional[str] = Header(default=None, alias=_API_KEY_HEADER),
+    x_admin_key: Optional[str] = Header(default=None, alias=_ADMIN_KEY_HEADER),
 ) -> str:
     """Dependency: resuelve y valida el tenant de la petición.
 
     Sin cabecera -> scope "system" (peticiones anónimas solo ven datos del
-    tenant virtual por defecto). Con X-Tenant-Id: el tenant debe existir y, si
-    tiene `api_key` en credentials, la cabecera X-Api-Key debe coincidir.
+    tenant virtual por defecto). Con X-Tenant-Id: el tenant debe existir y
+    estar autenticado (vía X-Api-Key del tenant o X-Admin-Key global).
     """
     if not x_tenant_id:
         return _DEFAULT_SCOPE
     tenant = _tenant_registry.get(x_tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
+
+    # 1. Admin bypass si coincide X-Admin-Key con settings.admin_api_key
+    if settings.admin_api_key and (x_admin_key == settings.admin_api_key or x_api_key == settings.admin_api_key):
+        return tenant.id
+
     expected_key = tenant.config.credentials.get("api_key")
-    if expected_key is not None and x_api_key != expected_key:
-        raise HTTPException(status_code=401, detail="API key inválida para el tenant")
+    # 2. Si el tenant tiene API key configurada, DEBE coincidir
+    if expected_key:
+        if x_api_key != expected_key:
+            raise HTTPException(status_code=401, detail="API key inválida para el tenant")
+        return tenant.id
+
+    # 3. Si el tenant no tiene API key configurada, rechazar acceso
+    if tenant.id != _DEFAULT_SCOPE:
+        raise HTTPException(
+            status_code=401,
+            detail="Autenticación requerida: el tenant requiere API key o X-Admin-Key"
+        )
     return tenant.id
+
+
+def admin_scope(
+    x_admin_key: Optional[str] = Header(default=None, alias=_ADMIN_KEY_HEADER),
+    x_api_key: Optional[str] = Header(default=None, alias=_API_KEY_HEADER),
+) -> bool:
+    """Dependency: valida acceso de administrador global."""
+    admin_key = settings.admin_api_key
+    if admin_key:
+        if x_admin_key == admin_key or x_api_key == admin_key:
+            return True
+        raise HTTPException(status_code=401, detail="Admin API key requerida o inválida")
+    if settings.dev_allow_all:
+        return True
+    raise HTTPException(status_code=401, detail="ADMIN_API_KEY no configurada en el servidor")
 
 _event_log = get_eventlog_repo()
 
@@ -190,10 +222,10 @@ def root() -> Dict[str, str]:
     return {"app": "Agentic OS", "status": "ok"}
 
 @app.get("/api/state", response_model=StateOut)
-def get_state() -> StateOut:
+def get_state(scope: str = Depends(tenant_scope)) -> StateOut:
     return StateOut(
         role=_orchestrator.current_role.name,
-        event_count=len(_event_log.list_all()),
+        event_count=len(_event_log.list_for_tenant(scope)),
     )
 
 @app.get("/api/events", response_model=List[EventOut])
@@ -246,6 +278,7 @@ def _try_execute(action: Optional[str], intent: Intent, tenant_id: str) -> str:
             action=action,
             params={"rationale": intent.goal, "payload": intent.payload},
             context=context,
+            tenant_id=tenant.id,
         )
         if not result.get("success"):
             return f"rechazada/fallo '{action}': {result.get('error')}"
@@ -258,6 +291,7 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
     with _tasks_lock:
         _background_tasks[task_id] = {
             "id": task_id,
+            "tenant_id": tenant_id,
             "status": "running",
             "message": message,
             "summary": "",
@@ -310,9 +344,9 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
     return task_id
 
 @app.get("/api/tasks")
-def list_tasks() -> List[Dict[str, Any]]:
+def list_tasks(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
     with _tasks_lock:
-        return [dict(t) for t in _background_tasks.values()]
+        return [dict(t) for t in _background_tasks.values() if t.get("tenant_id") == scope]
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, scope: str = Depends(tenant_scope)) -> ChatResponse:
@@ -450,6 +484,7 @@ class TenantOut(BaseModel):
     slug: str
     config: Dict[str, Any]
     created_at: str
+    api_key: Optional[str] = None
 
 class ExecuteRequest(BaseModel):
     tenant_id: Optional[str] = None  # DEPRECATED (FASE 4): ignorado; el tenant se resuelve por cabecera X-Tenant-Id
@@ -474,7 +509,7 @@ def list_tenants() -> List[TenantOut]:
     return [TenantOut(id=t.id, name=t.config.name, slug=t.slug, config=TenantConfigPublic.from_config(t.config).model_dump(), created_at=t.created_at.isoformat()) for t in _tenant_registry.list_all()]
 
 @app.post("/api/tenants", response_model=TenantOut, status_code=201)
-def create_tenant(req: TenantCreate) -> TenantOut:
+def create_tenant(req: TenantCreate, _: bool = Depends(admin_scope)) -> TenantOut:
     try:
         tenant = _tenant_registry.create(name=req.name, slug=req.slug, config=req.config or {})
         (EVENTLOG_DIR / f"{tenant.id}.jsonl").touch(exist_ok=True)
@@ -484,7 +519,14 @@ def create_tenant(req: TenantCreate) -> TenantOut:
         (TENANTS_DATA_DIR / tenant.id / "knowledge").mkdir(parents=True, exist_ok=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=TenantConfigPublic.from_config(tenant.config).model_dump(), created_at=tenant.created_at.isoformat())
+    return TenantOut(
+        id=tenant.id,
+        name=tenant.config.name,
+        slug=tenant.slug,
+        config=TenantConfigPublic.from_config(tenant.config).model_dump(),
+        created_at=tenant.created_at.isoformat(),
+        api_key=tenant.config.credentials.get("api_key"),
+    )
 
 @app.get("/api/tenants/{tenant_id}", response_model=TenantOut)
 def get_tenant(tenant_id: str) -> TenantOut:
@@ -494,7 +536,7 @@ def get_tenant(tenant_id: str) -> TenantOut:
     return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=TenantConfigPublic.from_config(tenant.config).model_dump(), created_at=tenant.created_at.isoformat())
 
 @app.patch("/api/tenants/{tenant_id}", response_model=TenantOut)
-def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
+def update_tenant(tenant_id: str, req: TenantUpdate, _: bool = Depends(admin_scope)) -> TenantOut:
     tenant = _tenant_registry.get(tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
@@ -502,15 +544,18 @@ def update_tenant(tenant_id: str, req: TenantUpdate) -> TenantOut:
     if req.name is not None:
         new_config = new_config.model_copy(update={"name": req.name})
     if req.config is not None:
+        # Sanitizar para evitar sobreescritura arbitraria de data_dir a rutas peligrosas
+        sanitized_cfg = dict(req.config)
+        sanitized_cfg.pop("data_dir", None)
         merged = tenant.config.model_dump()
-        merged.update(req.config)
+        merged.update(sanitized_cfg)
         new_config = TenantConfig(**merged)
     updated = Tenant(id=tenant.id, slug=tenant.slug, config=new_config, created_at=tenant.created_at)
     _tenant_registry.update(updated)
     return TenantOut(id=updated.id, name=updated.config.name, slug=updated.slug, config=TenantConfigPublic.from_config(updated.config).model_dump(), created_at=updated.created_at.isoformat())
 
 @app.delete("/api/tenants/{tenant_id}")
-def delete_tenant(tenant_id: str) -> Dict[str, str]:
+def delete_tenant(tenant_id: str, _: bool = Depends(admin_scope)) -> Dict[str, str]:
     if not _tenant_registry.delete(tenant_id):
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
     return {"status": "deleted", "id": tenant_id}
@@ -529,11 +574,20 @@ def execute(req: ExecuteRequest, scope: str = Depends(tenant_scope)) -> ExecuteR
     tenant = _tenant_registry.get(scope)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
-    if not _policy_engine.is_allowed(tenant_id=tenant.id, action=req.action):
-        return ExecuteResponse(success=False, result=None, error=f"Acción '{req.action}' denegada por política del tenant")
     try:
-        result = _executor.execute(action=req.action, params=req.params, context=TenantContext(tenant=tenant))
-        return ExecuteResponse(success=True, result=result)
+        result = _executor.execute(
+            action=req.action,
+            params=req.params,
+            context=TenantContext(tenant=tenant),
+            tenant_id=tenant.id,
+        )
+        if not result.get("success", False):
+            return ExecuteResponse(
+                success=False,
+                result=None,
+                error=result.get("error", f"Acción '{req.action}' denegada o fallida"),
+            )
+        return ExecuteResponse(success=True, result=result.get("output", result))
     except Exception as e:
         return ExecuteResponse(success=False, result=None, error=str(e))
 

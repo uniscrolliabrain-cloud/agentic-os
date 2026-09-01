@@ -20,6 +20,11 @@ class Event(BaseModel):
     actor_id: Optional[str] = None
     # NUEVO - cimiento multi-tenant (hallazgo GPT + Claude)
     tenant_id: str = Field(description="Tenant al que pertenece el evento. Obligatorio para aislamiento")
+    # NUEVO (hardening/consolidación): permite reconstruir una ejecución completa
+    correlation_id: Optional[str] = Field(
+        default=None,
+        description="ID de correlación para reconstruir una ejecución completa (Mission->EventLog).",
+    )
 
     def __str__(self) -> str:
         return f"Event[{self.tenant_id}:{self.kind}:{self.entity_id}]"

@@ -30,6 +30,22 @@ class TenantConfig(BaseModel):
     credentials: Dict[str, Any] = Field(default_factory=dict)
 
 
+import re
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]?$")
+
+
+def validate_slug(slug: str) -> str:
+    s = slug.strip().lower()
+    if not s or not SLUG_PATTERN.match(s) or ".." in s or "/" in s or "\\" in s:
+        raise ValueError(
+            f"Slug inválido: '{slug}'. Debe contener solo letras minúsculas, números, "
+            f"guiones y guiones bajos (1-64 caracteres) y no permitir path traversal."
+        )
+    return s
+
+
 class Tenant(BaseModel):
     """Un cliente del sistema agentic multi-tenant."""
 
@@ -39,6 +55,11 @@ class Tenant(BaseModel):
     slug: str  # p.ej. "acme"
     config: TenantConfig
     created_at: datetime = Field(default_factory=now_utc)
+
+    @field_validator("slug")
+    @classmethod
+    def check_slug(cls, v: str) -> str:
+        return validate_slug(v)
 
 
 class TenantConfigPublic(BaseModel):

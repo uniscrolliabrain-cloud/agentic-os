@@ -42,8 +42,9 @@ def client(monkeypatch, tmp_path):
     (tmp_path / "tenants").mkdir(parents=True)
     (tmp_path / "conversations_legacy").mkdir(parents=True)
 
-    # tenants A y B en memoria (limpiamos al terminar)
-    ta, tb = _make_tenant("tenant-a"), _make_tenant("tenant-b")
+    # tenants A y B en memoria con sus api_keys (limpiamos al terminar)
+    ta = _make_tenant("tenant-a", credentials={"api_key": "k-a-123"})
+    tb = _make_tenant("tenant-b", credentials={"api_key": "k-b-456"})
     tc = _make_tenant("tenant-sec", credentials={"api_key": "k-secure-123"})
     reg = rest_mod._tenant_registry
     for t in (ta, tb, tc):
@@ -74,7 +75,7 @@ def test_tenant_a_nunca_lee_eventos_de_tenant_b(client):
     )
     client["log"].append(ev)
 
-    r = c.get("/api/events", headers=_header(client["a"].id))
+    r = c.get("/api/events", headers=_header(client["a"].id, "k-a-123"))
     assert r.status_code == 200
     body = r.text
     assert "dato-de-B" not in body
@@ -82,36 +83,36 @@ def test_tenant_a_nunca_lee_eventos_de_tenant_b(client):
     # el propio tenant A sí ve lo suyo
     ev_a = Event(kind="DeA", entity_id="ent-a", payload={"x": "1"}, actor_id="t", tenant_id=client["a"].id)
     client["log"].append(ev_a)
-    r2 = c.get("/api/events", headers=_header(client["a"].id))
+    r2 = c.get("/api/events", headers=_header(client["a"].id, "k-a-123"))
     assert "DeA" in r2.text
 
 
 def test_tenant_a_nunca_lee_conversacion_de_tenant_b(client):
     c = client["client"]
     # B crea su conversación
-    r = c.post("/api/conversations", headers=_header(client["b"].id))
+    r = c.post("/api/conversations", headers=_header(client["b"].id, "k-b-456"))
     assert r.status_code == 201
     conv_b = r.json()
 
     # A conoce el conversation_id de B y aun así no puede leerla
-    r_get = c.get(f"/api/conversations/{conv_b['id']}", headers=_header(client["a"].id))
+    r_get = c.get(f"/api/conversations/{conv_b['id']}", headers=_header(client["a"].id, "k-a-123"))
     assert r_get.status_code == 404
     # ni borrarla
-    r_del = c.delete(f"/api/conversations/{conv_b['id']}", headers=_header(client["a"].id))
+    r_del = c.delete(f"/api/conversations/{conv_b['id']}", headers=_header(client["a"].id, "k-a-123"))
     assert r_del.status_code == 404
     # ni verla en el listado
-    r_list = c.get("/api/conversations", headers=_header(client["a"].id))
+    r_list = c.get("/api/conversations", headers=_header(client["a"].id, "k-a-123"))
     assert r_list.status_code == 200
     assert all(item["id"] != conv_b["id"] for item in r_list.json())
     # el dueño sí la ve
-    r_owner = c.get(f"/api/conversations/{conv_b['id']}", headers=_header(client["b"].id))
+    r_owner = c.get(f"/api/conversations/{conv_b['id']}", headers=_header(client["b"].id, "k-b-456"))
     assert r_owner.status_code == 200
     assert r_owner.json()["tenant_id"] == client["b"].id
 
 
 def test_conversacion_creada_lleva_tenant_id_y_ruta_por_tenant(client, tmp_path):
     c = client["client"]
-    r = c.post("/api/conversations", headers=_header(client["a"].id))
+    r = c.post("/api/conversations", headers=_header(client["a"].id, "k-a-123"))
     assert r.status_code == 201
     conv = r.json()
     assert conv["tenant_id"] == client["a"].id

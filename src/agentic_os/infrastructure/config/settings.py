@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # Seguridad FASE 1: único disparador del allow-all. ENV=dev NO cambia la
     # semántica de seguridad. Default false (incluso en dev).
     dev_allow_all: bool = Field(default=False, alias="DEV_ALLOW_ALL")
+    # Seguridad: clave de administración global (para gestión de tenants y endpoints admin)
+    admin_api_key: Optional[str] = Field(default=None, alias="ADMIN_API_KEY")
 
     # --- Credenciales de conectores (las 40 del .env.example) ---
     # Google

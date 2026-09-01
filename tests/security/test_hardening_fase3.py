@@ -13,15 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from src.agentic_os.execution.executor import Executor
-from src.agentic_os.execution.tools import ToolRegistry
-from src.agentic_os.execution.tools.gmail_tool import GmailSendTool
-from src.agentic_os.execution.tools.base import ToolValidationError
-from src.agentic_os.infrastructure.persistence.jsonl import JsonlEventLog
-from src.agentic_os.kernel.policy.engine import PolicyEngine
-from src.agentic_os.kernel.world.events import Event, EventLog
-from src.agentic_os.orchestration.orchestrator import Orchestrator
-from src.agentic_os.interfaces.llm.provider import MockLLMProvider
+from agentic_os.execution.executor import Executor
+from agentic_os.execution.tools import ToolRegistry
+from agentic_os.execution.tools.gmail_tool import GmailSendTool
+from agentic_os.execution.tools.base import ToolValidationError
+from agentic_os.infrastructure.persistence.jsonl import JsonlEventLog
+from agentic_os.kernel.policy.engine import PolicyEngine
+from agentic_os.kernel.world.events import Event, EventLog
+from agentic_os.orchestration.orchestrator import Orchestrator
+from agentic_os.interfaces.llm.provider import MockLLMProvider
 
 
 # ----------------------------------------------------- 1. tick agnóstico --
@@ -103,10 +103,10 @@ def test_tool_lanza_excepcion_tipada():
 
 
 def test_todas_las_tools_validan_con_excepcion():
-    from src.agentic_os.execution.tools.slack_tool import SlackSendTool
-    from src.agentic_os.execution.tools.whatsapp_tool import WhatsAppSendTool
-    from src.agentic_os.execution.tools.calendar_tool import CalendarCreateEventTool
-    from src.agentic_os.execution.tools.scraper_tool import WebScrapeTool, WebSearchTool
+    from agentic_os.execution.tools.slack_tool import SlackSendTool
+    from agentic_os.execution.tools.whatsapp_tool import WhatsAppSendTool
+    from agentic_os.execution.tools.calendar_tool import CalendarCreateEventTool
+    from agentic_os.execution.tools.scraper_tool import WebScrapeTool, WebSearchTool
 
     with pytest.raises(ToolValidationError):
         SlackSendTool().run({})

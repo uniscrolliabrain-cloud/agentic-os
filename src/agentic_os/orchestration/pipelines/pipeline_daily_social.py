@@ -2,9 +2,12 @@
 
 1) drive_list_files(folder="content_to_post/{tenant_id}")  -> cache local
 2) Elige el fichero de hoy (por fecha en el nombre)
-3) Genera copy con GeminiProvider (o mock si no hay API key)
+3) Genera copy con el LLM del runner (o fallback determinista)
 4) meta_post_publish (simulado)
 5) Guarda el resultado en data/tenants/{tenant_id}/artifacts/{date}/
+
+Todas las MicroActions se ejecutan vía `runner.tool()` -> Executor -> Policy ->
+Tool -> EventLog. NUNCA se llama a una Tool directamente.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from . import register
 
@@ -28,16 +31,15 @@ def _summarize(content: str, max_len: int = 200) -> str:
     return content if len(content) <= max_len else content[: max_len - 3] + "..."
 
 
-@register("daily_social")
-def run_daily_social(executor: Any, registry: Any, tenant_id: str) -> Dict[str, Any]:
-    drive_list = registry.get("drive_list_files")
-    meta_post = registry.get("meta_post_publish")
-
-    if drive_list is None or meta_post is None:
-        return {"status": "SKIPPED", "reason": "tools drive/meta no registradas"}
-
+@register("daily_social", tools=["drive_list_files", "drive_read_file", "meta_post_publish"])
+def run_daily_social(runner: Any, tenant_id: str, params: Optional[Dict[str, Any]] = None,
+                     correlation_id: Optional[str] = None) -> Dict[str, Any]:
+    params = params or {}
     folder = f"content_to_post/{tenant_id}"
-    listing = drive_list.run({"tenant_id": tenant_id, "folder": folder})
+
+    listing = runner.tool("drive_list_files",
+                          {"tenant_id": tenant_id, "folder": folder},
+                          tenant_id, correlation_id)
     files = listing.get("files", [])
     if not files:
         return {"status": "NO_CONTENT", "tenant_id": tenant_id, "folder": folder}
@@ -46,12 +48,13 @@ def run_daily_social(executor: Any, registry: Any, tenant_id: str) -> Dict[str, 
     today = _today()
     candidate = next((f for f in files if today in f["name"]), files[0])
 
-    read = registry.get("drive_read_file")
-    content = read.run({"tenant_id": tenant_id, "path": candidate["path"]}).get("content", "")
+    content = runner.tool("drive_read_file",
+                          {"tenant_id": tenant_id, "path": candidate["path"]},
+                          tenant_id, correlation_id).get("content", "")
 
-    # Genera copy con el LLM real si está disponible (fallback determinista)
+    # Genera copy con el LLM del runner (fallback determinista; nunca rompe)
     copy = _summarize(content)
-    llm = getattr(executor, "_llm", None) if executor else None
+    llm = getattr(runner, "llm", None)
     if llm is not None and hasattr(llm, "generate"):
         try:
             generated = llm.generate(
@@ -63,11 +66,11 @@ def run_daily_social(executor: Any, registry: Any, tenant_id: str) -> Dict[str, 
         except Exception:  # noqa: BLE001 - el copy fallback determinista nunca rompe
             pass
 
-    publish = meta_post.run({
-        "page_id": params_or(executor, "page_id", f"page_{tenant_id}"),
+    publish = runner.tool("meta_post_publish", {
+        "page_id": params.get("page_id", f"page_{tenant_id}"),
         "message": copy,
-        "image_url": params_or(executor, "image_url", candidate.get("path", "asset.jpg")),
-    })
+        "image_url": params.get("image_url", candidate.get("path", "asset.jpg")),
+    }, tenant_id, correlation_id)
 
     artifact = {
         "id": f"art_{uuid.uuid4().hex[:10]}",
@@ -84,10 +87,3 @@ def run_daily_social(executor: Any, registry: Any, tenant_id: str) -> Dict[str, 
         json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return {"status": "OK", "artifact": artifact}
-
-
-def params_or(executor: Any, key: str, default: Any) -> Any:
-    ctx = getattr(executor, "_pipeline_params", None)
-    if isinstance(ctx, dict):
-        return ctx.get(key, default)
-    return default

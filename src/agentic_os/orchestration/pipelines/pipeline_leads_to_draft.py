@@ -1,9 +1,11 @@
 """Pipeline leads -> borradores de email (FASE 6).
 
 1) drive_list_files(folder="leads/{tenant_id}")  -> CSV o JSON con leads
-2) Por cada lead genera un email personalizado con el LLM
+2) Por cada lead genera un email personalizado con el LLM del runner (o plantilla)
 3) gmail_create_draft guarda en data/tenants/{tenant_id}/drafts/ (SIMULADO)
-4) Evento LeadDraftCreated por lead
+
+Todas las MicroActions pasan por `runner.tool()` -> Executor -> Policy -> Tool.
+NUNCA envía: solo deja borradores (invariante de aprobación).
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import csv
 import io
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from . import register
 
@@ -38,27 +40,39 @@ def _parse_leads(content: str, name: str) -> List[Dict[str, Any]]:
     return leads
 
 
-@register("leads_to_draft")
-def run_leads_to_draft(executor: Any, registry: Any, tenant_id: str) -> Dict[str, Any]:
-    drive_list = registry.get("drive_list_files")
-    drive_read = registry.get("drive_read_file")
-    gmail_draft = registry.get("gmail_create_draft")
+@register("leads_to_draft", tools=["drive_list_files", "drive_read_file", "gmail_create_draft"])
+def run_leads_to_draft(runner: Any, *args, **kwargs) -> Dict[str, Any]:
+    if len(args) == 2 and hasattr(args[0], "get"):
+        registry = args[0]
+        tenant_id = args[1]
+        params = kwargs.get("params") or {}
+        correlation_id = kwargs.get("correlation_id")
+    elif len(args) >= 1:
+        tenant_id = args[0]
+        params = args[1] if len(args) > 1 else kwargs.get("params") or {}
+        correlation_id = args[2] if len(args) > 2 else kwargs.get("correlation_id")
+    else:
+        tenant_id = kwargs.get("tenant_id", "system")
+        params = kwargs.get("params") or {}
+        correlation_id = kwargs.get("correlation_id")
 
-    if not (drive_list and drive_read and gmail_draft):
-        return {"status": "SKIPPED", "reason": "tools drive/gmail_draft no registradas"}
-
+    params = params or {}
     folder = f"leads/{tenant_id}"
-    listing = drive_list.run({"tenant_id": tenant_id, "folder": folder})
+    listing = runner.tool("drive_list_files",
+                          {"tenant_id": tenant_id, "folder": folder},
+                          tenant_id, correlation_id)
     files = [f for f in listing.get("files", []) if f["name"].lower().endswith((".csv", ".json"))]
     if not files:
         return {"status": "NO_LEADS_FILE", "tenant_id": tenant_id, "folder": folder}
 
     lead_file = files[0]
-    content = drive_read.run({"tenant_id": tenant_id, "path": lead_file["path"]}).get("content", "")
+    content = runner.tool("drive_read_file",
+                          {"tenant_id": tenant_id, "path": lead_file["path"]},
+                          tenant_id, correlation_id).get("content", "")
     leads = _parse_leads(content, lead_file["name"])
 
     created = []
-    llm = getattr(executor, "_llm", None) if executor else None
+    llm = getattr(runner, "llm", None)
     for lead in leads:
         name = lead.get("name", "")
         email = lead.get("email", "")
@@ -77,9 +91,9 @@ def run_leads_to_draft(executor: Any, registry: Any, tenant_id: str) -> Dict[str
                     body = generated.strip()
             except Exception:  # noqa: BLE001 - fallback determinista
                 pass
-        draft = gmail_draft.run({
+        draft = runner.tool("gmail_create_draft", {
             "tenant_id": tenant_id, "to": email, "subject": subject, "body": body,
-        })
+        }, tenant_id, correlation_id)
         created.append(draft)
 
     return {"status": "OK", "tenant_id": tenant_id, "drafts_created": len(created)}

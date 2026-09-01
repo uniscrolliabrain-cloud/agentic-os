@@ -9,18 +9,30 @@ from __future__ import annotations
 
 import pytest
 
-from src.agentic_os.execution.executor import Executor
-from src.agentic_os.execution.tools import build_default_registry
-from src.agentic_os.execution.tools.connector_bridge import (
+from agentic_os.execution.executor import Executor
+from agentic_os.execution.tools import build_default_registry
+from agentic_os.execution.tools.connector_bridge import (
     CANONICAL_ALIASES,
     ConnectorBridgeTool,
     build_capability_registry,
 )
 
 
+from agentic_os.kernel.policy.engine import PolicyEngine
+from agentic_os.kernel.policy.models import Policy, PolicyRule
+
+
 def _bare_executor() -> Executor:
-    """Executor sin policy engine: aísla el camino de resolución de tools."""
-    return Executor(registry=build_default_registry())
+    """Executor con policy permitida explícitamente para aislar la resolución de tools."""
+    allow_policy = Policy(
+        id="allow-test",
+        name="allow-test",
+        rules=[
+            PolicyRule(id="rule-gmail", capability="gmail_send", effect="allow"),
+            PolicyRule(id="rule-dummy", capability="accion_inexistente", effect="allow"),
+        ],
+    )
+    return Executor(registry=build_default_registry(), policy_engine=PolicyEngine(policy=allow_policy))
 
 
 def test_gmail_send_resolves_via_connector_kernel():

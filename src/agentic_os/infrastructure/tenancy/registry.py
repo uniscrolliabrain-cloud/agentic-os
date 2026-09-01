@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...kernel.types.ids import new_id
-from .models import Tenant, TenantConfig
+from .models import Tenant, TenantConfig, validate_slug
 
 
 class TenantRegistry:
@@ -47,9 +47,21 @@ class TenantRegistry:
         return list(self._tenants.values())
 
     def create(self, name: str, slug: str, config: Optional[Dict[str, Any]] = None) -> Tenant:
+        slug = validate_slug(slug)
         if slug in self._slug_index:
             raise ValueError(f"Ya existe un tenant con slug '{slug}'")
-        base = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "tenants" / slug
+
+        tenants_root = (Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "tenants").resolve()
+        base = (tenants_root / slug).resolve()
+        try:
+            base.relative_to(tenants_root)
+        except ValueError:
+            raise ValueError(f"Ruta no permitida para el slug: '{slug}'")
+
+        creds = dict(config.get("credentials", {})) if config else {}
+        if "api_key" not in creds:
+            creds["api_key"] = f"tk_{new_id().replace('-', '')}"
+
         t = Tenant(
             id=new_id(),
             slug=slug,
@@ -58,7 +70,7 @@ class TenantRegistry:
                 domain=config.get("domain", "generic") if config else "generic",
                 data_dir=str(base),
                 enabled_capabilities=config.get("enabled_capabilities", []) if config else [],
-                credentials=config.get("credentials", {}) if config else {},
+                credentials=creds,
             ),
         )
         self._tenants[t.id] = t

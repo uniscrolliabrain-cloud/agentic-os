@@ -104,5 +104,13 @@ class _PipelineExecutorHost:
 
     def __init__(self, llm=None, registry=None):
         self._llm = llm
+        self.llm = llm
         self._pipeline_params = {}
         self.registry = registry
+
+    def tool(self, name: str, params: dict, tenant_id: str = "system", correlation_id: Any = None) -> dict:
+        if self.registry:
+            t = self.registry.get(name)
+            if t:
+                return t.run(params)
+        raise ValueError(f"Tool '{name}' no encontrada en registry")
