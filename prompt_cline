@@ -1,0 +1,1833 @@
+esto es todo lo que hay que solucionar del repo, tienes que ir creando planes de accion y ejecutandolos hasta que todo lo que muestra este audit del repo este solucionado:
+Sí. He revisado el repo que has adjuntado **como código**, no solo la documentación. Y te voy a dar un audit técnico bastante más duro que un “está bien estructurado”.
+
+La conclusión corta:
+
+> **La arquitectura conceptual es bastante buena y está mucho más avanzada que un agente convencional, pero la implementación todavía está en una fase híbrida: hay un núcleo determinista real, rodeado de bastante scaffolding, mocks y atajos que actualmente contradicen algunas de las invariantes que el propio sistema declara.**
+
+El punto más importante: **el problema ya no es “te falta arquitectura”**. El problema es **cerrar la distancia entre la arquitectura especificada y el runtime efectivo**.
+
+---
+
+# 1. Veredicto general
+
+| Área                                      | Estado                                                           |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| Arquitectura conceptual                   | 🟢 **8.5/10**                                                    |
+| Separación Kernel / Cognition / Execution | 🟢 **8/10**                                                      |
+| Pydantic como contrato                    | 🟡 **6.5/10**                                                    |
+| Ontología / taxonomía                     | 🟢 **8/10**                                                      |
+| Policy / seguridad conceptual             | 🟢 **8/10**                                                      |
+| Multi-tenancy                             | 🟢 **7.5/10**                                                    |
+| Event sourcing                            | 🟡 **7/10**                                                      |
+| Orquestación real                         | 🔴 **5/10**                                                      |
+| Pipelines/SOPs                            | 🔴 **4.5/10**                                                    |
+| Conectores reales                         | 🔴 **3/10**                                                      |
+| MCP                                       | 🔴 **1/10**                                                      |
+| Tests                                     | 🟢 **8/10 como hardening**, 🟡 **5/10 como cobertura funcional** |
+| Producción enterprise                     | 🔴 **4/10**                                                      |
+| Potencial del sistema                     | 🟢 **muy alto**                                                  |
+
+Y hay una distinción crucial:
+
+**No diría que el proyecto sea malo ni que esté “a medias” arquitectónicamente.**
+
+Diría que tienes:
+
+**un buen diseño de un Agentic OS + una implementación parcial del runtime.**
+
+Eso es diferente.
+
+---
+
+# 2. Lo que realmente has construido
+
+La estructura del repo es seria.
+
+Tienes:
+
+```text
+kernel
+ ├── ontology
+ ├── policy
+ ├── world
+ └── types
+
+cognition
+ ├── beliefs
+ ├── memory
+ ├── planning
+ ├── reasoning
+ ├── roles
+ └── skills
+
+execution
+ ├── action
+ ├── executor
+ └── tools
+
+orchestration
+ ├── orchestrator
+ ├── scheduler
+ ├── coordination
+ └── pipelines
+
+connectors
+ ├── registry
+ ├── router
+ ├── auth
+ ├── providers
+ └── core
+
+interfaces
+ ├── API
+ ├── LLM
+ ├── MCP
+ └── events
+```
+
+Esto **sí tiene forma de sistema operativo agéntico**, no simplemente de chatbot con herramientas.
+
+Además, el principio:
+
+> `MICROACTIONS → PIPELINES → MINIAGENTS → ORCHESTRATOR → MISSION`
+
+es una decisión arquitectónica potente. Está alineada con el objetivo de impedir que un LLM improvise procedimientos arbitrarios. 
+
+Y también está bien que hayas definido:
+
+> `LLM propone → Policy decide → Executor ejecuta → EventLog registra`
+
+Eso aparece consistentemente en la especificación. 
+
+---
+
+# 3. EL MAYOR PROBLEMA: la especificación y el runtime no coinciden
+
+Aquí está el hallazgo más importante de todo el audit.
+
+Tu documentación dice:
+
+```text
+Pipeline
+ ↓
+MicroAction
+ ↓
+Policy
+ ↓
+Executor
+ ↓
+Tool
+ ↓
+EventLog
+```
+
+Y el `PipelineRunner` efectivamente implementa eso:
+
+```python
+result = self.executor.execute(...)
+```
+
+
+
+**Pero existe otro camino.**
+
+En `Orchestrator` tienes `_PipelineExecutorHost`:
+
+```python
+def tool(...):
+    if self.registry:
+        t = self.registry.get(name)
+        if t:
+            return t.run(params)
+```
+
+Es decir:
+
+```text
+Pipeline
+ ↓
+_PipelineExecutorHost
+ ↓
+Tool.run()
+```
+
+**saltándose Executor + Policy + auditoría.**
+
+
+
+Esto es directamente contrario a tu propia invariante.
+
+Y además `handle_pipeline()` puede usar ese host:
+
+```python
+if executor is None:
+    executor = _PipelineExecutorHost(...)
+```
+
+
+
+### Esto hay que eliminar.
+
+No es un detalle.
+
+Es probablemente el **P0 arquitectónico número 1**.
+
+Debe existir **un único camino de ejecución**.
+
+```text
+                    ┌───────────────┐
+                    │  Orchestrator │
+                    └───────┬───────┘
+                            ↓
+                       TaskPlan
+                            ↓
+                       PipelineRunner
+                            ↓
+                         Executor
+                            ↓
+                       PolicyEngine
+                            ↓
+                      Capability
+                            ↓
+                       Tool/Connector
+                            ↓
+                        EventLog
+```
+
+No debe existir un segundo `tool.run()` desde orchestration.
+
+---
+
+# 4. Hay además un bug serio en `handle_pipeline`
+
+Esto es todavía más concreto.
+
+El runner correcto espera:
+
+```python
+fn(self, tenant_id, params, correlation_id)
+```
+
+
+
+Pero `Orchestrator.handle_pipeline()` hace:
+
+```python
+return fn(executor, registry, tenant_id)
+```
+
+
+
+Eso significa que para `daily_social`, cuya firma es:
+
+```python
+run_daily_social(runner, tenant_id, params=None, correlation_id=None)
+```
+
+
+
+los argumentos se desplazan:
+
+```text
+runner       = executor
+tenant_id    = registry
+params       = tenant_id
+```
+
+Eso no es un problema teórico.
+
+**Es una incompatibilidad real de interfaces.**
+
+Además tienes tres estilos distintos de pipeline:
+
+```text
+daily_social:
+    (runner, tenant_id, params, correlation_id)
+
+inbox_watcher:
+    (executor, registry, tenant_id)
+
+leads_to_draft:
+    runner + *args/**kwargs
+```
+
+
+
+
+
+Esto es exactamente lo contrario de lo que debería ser un sistema contractual.
+
+### Solución
+
+Todos los pipelines deberían implementar **una única interfaz**:
+
+```python
+class Pipeline(Protocol):
+    def run(
+        self,
+        runner: PipelineRunner,
+        tenant_id: TenantId,
+        params: PipelineInput,
+        correlation_id: CorrelationId,
+    ) -> PipelineResult:
+        ...
+```
+
+Nada de:
+
+```python
+*args
+**kwargs
+registry
+executor
+```
+
+en cada pipeline.
+
+---
+
+# 5. El Pydantic todavía no es realmente “el sistema de tipos del mundo”
+
+Aquí veo algo muy interesante.
+
+La documentación declara:
+
+> “Pydantic no es solo validación: es el sistema de tipos del mundo digital.”
+
+
+
+Y define modelos bastante ambiciosos:
+
+```text
+MicroActionSchema
+PipelineSchema
+MiniAgentSchema
+TaskNode
+TaskPlan
+```
+
+
+
+Pero la implementación que he encontrado en el kernel es todavía mucho más permisiva.
+
+Por ejemplo:
+
+```python
+class Entity(BaseModel):
+    id: str
+    kind: str
+    attributes: Dict[str, Any]
+```
+
+
+
+Eso significa que realmente tienes:
+
+```text
+Entity
+ └── kind: str
+ └── attributes: Dict[str, Any]
+```
+
+No tienes todavía:
+
+```text
+Entity
+ ├── Person
+ ├── Company
+ ├── Document
+ ├── Message
+ ├── Task
+ ...
+```
+
+como **tipos contractuales fuertes**.
+
+Lo mismo ocurre con `Capability`:
+
+```python
+class Capability(BaseModel):
+    name: str
+    description: str
+    requires_tools: List[str]
+```
+
+
+
+Es demasiado débil para representar toda la semántica que declaras.
+
+---
+
+# 6. La diferencia entre “schema documentado” y “schema ejecutable” es enorme
+
+Este punto conecta directamente con lo que me habías contado anteriormente sobre llevar Pydantic mucho más lejos.
+
+Tu especificación dice que una MicroAction debería tener:
+
+```text
+id
+action_type
+entity_type
+taxonomy
+purpose
+input_schema
+preconditions
+tool
+output_schema
+validation
+error_states
+handoff
+timeout
+retry_policy
+```
+
+
+
+Eso es muy potente.
+
+Pero en el runtime no veo todavía ese **contrato como objeto operativo central que gobierne la ejecución**.
+
+Lo que tienes actualmente sigue teniendo muchos caminos basados en:
+
+```python
+str
+dict
+List[str]
+Any
+```
+
+Por ejemplo:
+
+```python
+Action.params: dict
+```
+
+
+
+y:
+
+```python
+WorldState.entities: Dict[str, Dict[str, Any]]
+```
+
+
+
+Esto significa que tienes:
+
+**Pydantic alrededor del sistema**
+
+pero todavía no:
+
+**Pydantic como sistema operativo interno del sistema.**
+
+---
+
+# 7. Este es el siguiente salto que yo haría
+
+Tu arquitectura pide algo parecido a:
+
+```text
+Natural Language
+        ↓
+Intent
+        ↓
+IntentClassifier
+        ↓
+Canonical Intent
+        ↓
+TaskPlan
+        ↓
+TaskNode
+        ↓
+MicroAction
+        ↓
+Capability
+        ↓
+Command
+        ↓
+Connector
+```
+
+Y cada transición debería ser:
+
+```text
+Pydantic input
+       ↓
+validator
+       ↓
+Pydantic output
+```
+
+No:
+
+```text
+dict → dict → str → dict → tool
+```
+
+Ese cambio convertiría tu arquitectura de **framework agéntico bien diseñado** a algo bastante más cercano a un **runtime agéntico tipado**.
+
+---
+
+# 8. El Connector Kernel está conceptualmente muy bien
+
+Aquí sí te doy bastante crédito.
+
+La separación:
+
+```text
+canonical capability
+        ↓
+CapabilityRegistry
+        ↓
+ConnectorRouter
+        ↓
+Connector
+        ↓
+Provider
+```
+
+está muy bien planteada.
+
+El router comprueba:
+
+```text
+capability
+provider
+credentials
+health
+support
+```
+
+y evita que el LLM seleccione directamente el proveedor. 
+
+También tienes un catálogo muy amplio: el test espera al menos 44 providers. 
+
+Esto me parece una de las partes más interesantes del repo.
+
+---
+
+# 9. Pero los 44 providers no son 44 integraciones
+
+Esto hay que decirlo claramente.
+
+El README habla de:
+
+> **44 providers · 265 mappings · ~187 capabilities**
+
+
+
+Pero el propio código declara que los providers nacen:
+
+```python
+connected=False
+```
+
+y que sin conexión devuelven:
+
+```text
+CONNECTOR_NOT_CONFIGURED
+```
+
+
+
+Los tests incluso verifican que **todos nacen desconectados**. 
+
+Por tanto:
+
+### Lo que tienes
+
+**44 definiciones de providers + catálogo de capacidades + routing kernel.**
+
+### Lo que no tienes todavía
+
+**44 integraciones productivas.**
+
+Y esto está bien para la fase en la que estás.
+
+Solo hay que evitar que el README transmita la segunda impresión.
+
+---
+
+# 10. Las tools actuales son mayoritariamente simulaciones
+
+Por ejemplo Calendar:
+
+```python
+return {
+    "status": "SIMULATED",
+    "real_execution": False,
+    ...
+}
+```
+
+
+
+Esto es bueno para desarrollo.
+
+Pero significa que:
+
+```text
+Agentic OS
+```
+
+todavía no está operando realmente el mundo externo.
+
+Está operando un **mundo simulado/controlado**.
+
+Eso es una buena estrategia de desarrollo.
+
+De hecho, yo **no conectaría todavía 44 providers**.
+
+Primero cerraría completamente el runtime.
+
+---
+
+# 11. Hay una segunda fuga arquitectónica importante: pipelines que llaman tools directamente
+
+`inbox_watcher` hace:
+
+```python
+list_unread.run(...)
+```
+
+y:
+
+```python
+gmail_draft.run(...)
+```
+
+directamente. 
+
+Por tanto tienes:
+
+```text
+PipelineRunner → Executor → Tool
+```
+
+en unos casos,
+
+pero:
+
+```text
+Pipeline → Registry → Tool.run()
+```
+
+en otros.
+
+Eso rompe la uniformidad.
+
+### P0
+
+Todos deberían pasar por:
+
+```python
+runner.tool(...)
+```
+
+sin excepción.
+
+---
+
+# 12. La Policy está bastante bien protegida
+
+Aquí hay trabajo real.
+
+Has corregido el antiguo problema del allow-all implícito.
+
+Ahora:
+
+```python
+DEV_ALLOW_ALL
+```
+
+es el disparador explícito.
+
+Y por defecto:
+
+```text
+deny
+```
+
+
+
+Además `can_for_tenant()` comprueba `enabled_capabilities` antes de evaluar la policy. 
+
+Y el Executor vuelve a comprobar policy antes de ejecutar:
+
+```python
+decision = self._policy_decision(...)
+```
+
+
+
+Esto es bueno.
+
+---
+
+# 13. Multi-tenancy: bastante mejor de lo habitual
+
+Aquí también hay una base sólida.
+
+La API resuelve tenant mediante:
+
+```text
+X-Tenant-Id
++
+X-Api-Key
+```
+
+y no confía en el `tenant_id` enviado en el body. 
+
+Las conversaciones además están separadas físicamente:
+
+```text
+data/
+  tenants/
+    tenant-A/
+      conversations/
+    tenant-B/
+      conversations/
+```
+
+
+
+Y los tests comprueban que A no pueda leer B. 
+
+Eso es una buena base.
+
+---
+
+# 14. Pero NO lo consideraría todavía seguridad enterprise
+
+Porque tú mismo tienes:
+
+```text
+TODO(auth): sustituir por OAuth/JWT real
+```
+
+
+
+y la autenticación actual es una API key sencilla.
+
+Eso puede estar perfectamente bien para:
+
+```text
+MVP
+prototipo
+self-hosted
+internal tool
+development
+```
+
+Pero no para afirmar:
+
+```text
+enterprise security
+```
+
+sin más.
+
+Para producción necesitarás como mínimo:
+
+```text
+Identity
+ ↓
+JWT/OIDC
+ ↓
+User
+ ↓
+Organization
+ ↓
+Tenant
+ ↓
+Role
+ ↓
+Permission
+ ↓
+Capability
+ ↓
+Resource
+```
+
+y no solamente:
+
+```text
+X-Tenant-Id + API key
+```
+
+---
+
+# 15. Event sourcing: buena dirección, pero todavía incompleto
+
+Tienes una buena base:
+
+```text
+Event
+EventLog
+WorldState
+apply()
+replay()
+```
+
+El `WorldState` se reconstruye mediante replay. 
+
+Y el Event es immutable/frozen. 
+
+Eso está bien.
+
+Pero ojo:
+
+```python
+WorldState:
+    entities: Dict[str, Dict[str, Any]]
+    relations: Dict[str, Dict[str, Any]]
+```
+
+sigue siendo bastante genérico. 
+
+Además, tienes múltiples repositorios:
+
+```text
+memory
+jsonl
+postgres
+```
+
+pero la semántica de Event Sourcing todavía no parece ser el corazón de **cada operación del sistema**.
+
+Todavía existen mutaciones directas de filesystem para:
+
+```text
+conversations
+drafts
+artifacts
+schedules
+tenants
+```
+
+Por ejemplo las conversaciones se escriben directamente como JSON. 
+
+Eso significa que tienes un sistema:
+
+**event-sourced en algunas partes + CRUD tradicional en otras.**
+
+---
+
+# 16. El scheduler funciona como infraestructura, pero no como parte del modelo de misión
+
+El scheduler está bastante bien como componente aislado:
+
+```text
+tenant
+pipeline
+schedule
+APScheduler
+EventLog
+```
+
+
+
+Pero conceptualmente tu sistema dice:
+
+```text
+Mission
+ ↓
+TaskGraph
+ ↓
+TaskNode
+ ↓
+Pipeline
+ ↓
+MicroActions
+```
+
+mientras que el scheduler actualmente puede ir directamente:
+
+```text
+schedule
+ ↓
+pipeline
+```
+
+Esto salta parte del modelo cognitivo.
+
+Yo definiría:
+
+```text
+Trigger
+ ↓
+Mission
+ ↓
+TaskPlan
+ ↓
+TaskGraph
+ ↓
+Pipeline
+```
+
+incluso para automatizaciones.
+
+Así todo el sistema tendría **un único modelo de ejecución**.
+
+---
+
+# 17. MCP actualmente es scaffolding
+
+Esto es sencillo.
+
+Tienes:
+
+```python
+class MCPClient:
+    def connect(self): pass
+```
+
+```python
+class MCPServer:
+    def start(self): pass
+```
+
+```python
+def expose_tools(): return []
+```
+
+
+
+Por tanto:
+
+**MCP no está implementado todavía.**
+
+La interfaz existe, pero funcionalmente no aporta capacidad.
+
+No lo considero un problema si está conscientemente en roadmap.
+
+---
+
+# 18. VSM también es scaffolding
+
+Tienes:
+
+```python
+class VSM:
+    def __init__(self): pass
+```
+
+
+
+Y:
+
+```python
+while False:
+    pass
+```
+
+en `Loop`.
+
+Por tanto la capa:
+
+```text
+coordination / VSM
+```
+
+es todavía conceptual.
+
+Esto es importante porque el nombre de la arquitectura puede dar la impresión de que el sistema ya posee esa capacidad.
+
+No.
+
+**Está preparada la ranura arquitectónica.**
+
+---
+
+# 19. Hay demasiado “Any” y `dict` para el objetivo que persigues
+
+Este es probablemente mi segundo gran hallazgo después del bypass del Executor.
+
+Tu filosofía dice:
+
+> “No permitas inputs arbitrarios.”
+
+
+
+Pero en runtime aparecen muchos:
+
+```python
+params: dict
+payload: Dict[str, Any]
+attributes: Dict[str, Any]
+context: Any
+event_log: Any
+executor: Any
+registry: Any
+```
+
+Eso crea una paradoja:
+
+### Filosofía
+
+```text
+closed contracts
+```
+
+### Implementación
+
+```text
+open dictionaries
+```
+
+Y ahí está precisamente el trabajo que tú comentabas que querías hacer con Pydantic.
+
+---
+
+# 20. El LLM todavía tiene demasiado espacio semántico
+
+El Orchestrator sí obliga al LLM a generar `Intent`. Eso está bien:
+
+```python
+generate_structured(
+    response_schema=Intent
+)
+```
+
+
+
+Pero después hay:
+
+```python
+_map_kind_to_action()
+```
+
+que hace:
+
+```text
+email → gmail_send
+slack → slack_send
+whatsapp → whatsapp_send
+calendar → calendar_create_event
+web → web_scrape
+```
+
+
+
+Eso es demasiado rudimentario para el sistema que estás construyendo.
+
+Tu futuro router debería ser:
+
+```text
+natural language
+       ↓
+intent embedding / classifier
+       ↓
+ontology
+       ↓
+taxonomy
+       ↓
+candidate capabilities
+       ↓
+constraint matching
+       ↓
+agent matchmaking
+       ↓
+TaskGraph
+```
+
+No:
+
+```text
+if "gmail" in kind:
+    gmail_send
+```
+
+---
+
+# 21. Y aquí aparece exactamente la pieza que tú me habías descrito
+
+Lo que quieres construir después:
+
+> agente árbitro + matchmaking estadístico + intents + taxonomización + ontologías + SOPs + pipelines + skills + frameworks
+
+**encaja perfectamente con lo que ya tienes.**
+
+De hecho, yo no añadiría todavía más providers.
+
+Construiría precisamente esa capa.
+
+Porque actualmente tienes:
+
+```text
+ONTOLOGY
+TAXONOMY
+CAPABILITY
+SKILL
+PIPELINE
+AGENT
+ROLE
+POLICY
+CONNECTOR
+```
+
+pero todavía falta una pieza que los **conecte semánticamente**.
+
+La llamaría algo como:
+
+```text
+Agentic Match Engine
+```
+
+o:
+
+```text
+Mission Compiler
+```
+
+---
+
+# 22. El verdadero compilador que te falta
+
+Tu sistema actualmente tiene:
+
+```text
+ontology.yaml
+      ↓
+Capability
+      ↓
+ConnectorRegistry
+```
+
+Eso ya existe en `compile_ontology.py`. 
+
+Pero necesitas otro compilador:
+
+```text
+USER REQUEST
+     ↓
+SEMANTIC PARSER
+     ↓
+INTENT
+     ↓
+ONTOLOGY RESOLUTION
+     ↓
+TAXONOMY CLASSIFICATION
+     ↓
+CAPABILITY MATCHING
+     ↓
+AGENT MATCHING
+     ↓
+SKILL MATCHING
+     ↓
+SOP MATCHING
+     ↓
+PIPELINE SELECTION
+     ↓
+TASK GRAPH
+     ↓
+POLICY
+     ↓
+EXECUTION
+```
+
+Ese sería el corazón diferencial del sistema.
+
+---
+
+# 23. Tus tests son mejores de lo que parece
+
+Hay bastante trabajo de hardening.
+
+Por ejemplo comprueban:
+
+* aislamiento de tenants
+* API keys
+* path traversal
+* deny-by-default
+* errores de tools
+* no filtración de secretos
+* connectors
+* dry-run
+* event sourcing
+* invariantes
+
+
+
+Y además has detectado bugs reales durante el desarrollo, como el problema anterior de `log.events` frente a `all_events()`. 
+
+Eso me dice que el proyecto **sí está evolucionando mediante hardening real**, no solamente acumulando carpetas.
+
+---
+
+# 24. Pero hay un problema con la calidad de algunos tests
+
+Muchos tests verifican:
+
+```text
+"la estructura existe"
+```
+
+en lugar de:
+
+```text
+"el sistema completo hace lo correcto"
+```
+
+Por ejemplo:
+
+```python
+assert len(PROVIDER_SPECS) >= 44
+```
+
+o:
+
+```python
+assert conn.connected is False
+```
+
+
+
+Eso prueba catálogo.
+
+No prueba integración.
+
+Necesitas una nueva categoría:
+
+# Invariant / Contract / Scenario tests
+
+Por ejemplo:
+
+```text
+Given:
+    tenant A
+    intent "manda email a Juan"
+
+When:
+    mission compiler procesa intent
+
+Then:
+    selected_agent == communication.email_sender
+    capability == email.message.send
+    policy == allow
+    tool == gmail
+    command validates
+    event chain exists
+    result validates
+```
+
+Eso sería muchísimo más valioso para tu arquitectura.
+
+---
+
+# 25. Hay además errores silenciosos demasiado peligrosos
+
+Tienes varios:
+
+```python
+except Exception:
+    pass
+```
+
+Ejemplo en Executor:
+
+```python
+try:
+    self.event_log.append(...)
+except Exception:
+    pass
+```
+
+
+
+Esto tiene una consecuencia conceptual grave:
+
+Tu arquitectura dice:
+
+> Todo queda auditado.
+
+Pero si el EventLog falla:
+
+```text
+execution succeeds
++
+audit fails
+=
+system continues
+```
+
+Eso puede destruir la garantía de auditoría.
+
+Para un sistema cuyo kernel declara:
+
+```text
+EventLog = fuente de verdad
+```
+
+yo haría:
+
+### Para operaciones normales
+
+```text
+audit failure → execution failure
+```
+
+o como mínimo:
+
+```text
+audit failure → CRITICAL state
+```
+
+No:
+
+```text
+pass
+```
+
+---
+
+# 26. El mismo problema aparece en Scheduler
+
+El scheduler hace:
+
+```python
+except Exception:
+    pass
+```
+
+cuando falla el EventLog. 
+
+Esto vuelve a romper la semántica:
+
+```text
+auditable
+```
+
+si la auditoría es opcional.
+
+Para un Agentic OS serio yo establecería una invariante:
+
+> **Una operación con requisito de auditoría no puede alcanzar `COMPLETED` si su evento de auditoría no ha sido persistido.**
+
+Eso sí sería una invariante fuerte.
+
+---
+
+# 27. También hay un problema de consistencia temporal
+
+Usas:
+
+```python
+datetime.utcnow()
+```
+
+en varias partes.
+
+Mientras tienes un `now_utc()` propio en el kernel.
+
+Por ejemplo Event usa:
+
+```python
+now_utc()
+```
+
+pero Scheduler y API utilizan directamente:
+
+```python
+datetime.utcnow()
+```
+
+Esto crea dos fuentes de tiempo.
+
+Yo lo unificaría completamente:
+
+```text
+kernel.types.time
+       ↓
+todo el sistema
+```
+
+Especialmente si quieres:
+
+```text
+event ordering
+replay
+scheduler
+correlation
+causal tracing
+```
+
+---
+
+# 28. Otro detalle: rate limiter
+
+El `RateLimiter` está bien encaminado, pero hay una cosa sospechosa.
+
+Para requests per second:
+
+```python
+window = 1.0 / policy.requests_per_second
+self._trim(... now - 1.0, window)
+```
+
+pero el `_trim()` utiliza realmente:
+
+```python
+dq[0] < cutoff
+```
+
+y el parámetro `window` no participa en esa decisión. 
+
+Por tanto la semántica efectiva es más parecida a:
+
+```text
+N requests / last 1 second
+```
+
+que a un verdadero sliding window parametrizado de la forma que el código parece sugerir.
+
+No es prioritario ahora, pero lo corregiría antes de producción.
+
+---
+
+# 29. La API también tiene demasiado poder concentrado
+
+Por ejemplo:
+
+```text
+/api/execute
+```
+
+acepta:
+
+```python
+action: str
+params: Dict[str, Any]
+```
+
+
+
+Aunque Executor pasa por policy, todavía existe una API genérica:
+
+```text
+POST /api/execute
+```
+
+que permite pedir una acción arbitraria.
+
+Para un sistema realmente cerrado, la API externa debería aceptar:
+
+```text
+Mission
+Intent
+Command
+TaskPlan
+```
+
+pero no necesariamente:
+
+```text
+action="whatever"
+params={}
+```
+
+Eso es demasiado parecido a una syscall genérica.
+
+---
+
+# 30. Tu “kernel” todavía no es completamente kernel
+
+Ahora mismo:
+
+```text
+kernel/
+```
+
+es pequeño, lo cual es bueno.
+
+Pero algunas invariantes están solo expresadas como listas:
+
+```python
+INVARIANTS = [
+    "Event immutable",
+    "Log append-only",
+    "State derivable",
+    ...
+]
+```
+
+
+
+Eso **describe** invariantes.
+
+No necesariamente las **hace cumplir**.
+
+Un kernel fuerte debería transformar eso en:
+
+```python
+InvariantViolation
+```
+
+y validators reales.
+
+Por ejemplo:
+
+```python
+assert_event_valid(event)
+assert_transition_valid(old, new)
+assert_capability_valid(command)
+assert_tenant_scope_valid(context)
+assert_policy_valid(decision)
+```
+
+Entonces la palabra “invariant” deja de ser documentación y pasa a ser mecanismo.
+
+---
+
+# 31. El mayor riesgo técnico actual
+
+No es seguridad.
+
+No es Gemini.
+
+No son los connectors.
+
+No es React.
+
+Es:
+
+# **Divergencia de caminos de ejecución.**
+
+Tienes demasiadas rutas:
+
+```text
+API → Executor
+API → Orchestrator
+Scheduler → Orchestrator
+Orchestrator → pipeline
+Pipeline → runner
+Pipeline → registry
+Pipeline → Tool
+ConnectorRouter → connector
+Tool → bridge
+```
+
+y cada ruta puede aplicar reglas diferentes.
+
+Tu objetivo debería ser reducir todo a:
+
+```text
+             ┌───────────────┐
+             │    Mission    │
+             └───────┬───────┘
+                     ↓
+                 Compiler
+                     ↓
+                 TaskGraph
+                     ↓
+               PipelineRunner
+                     ↓
+                  Executor
+                     ↓
+                PolicyEngine
+                     ↓
+                 Command
+                     ↓
+            CapabilityRegistry
+                     ↓
+              ConnectorRouter
+                     ↓
+                Connector
+                     ↓
+                 Provider
+                     ↓
+                 Result
+                     ↓
+               EventLog
+```
+
+**Un solo camino.**
+
+---
+
+# 32. Mi ranking de prioridades
+
+## P0 — arreglar inmediatamente
+
+### 1. Eliminar bypass de Executor
+
+Especialmente:
+
+```python
+t.run(params)
+```
+
+desde `_PipelineExecutorHost`.
+
+### 2. Unificar interfaz de pipelines
+
+Nada de:
+
+```text
+*args
+**kwargs
+executor
+registry
+runner
+```
+
+mezclados.
+
+### 3. Arreglar `handle_pipeline()`
+
+Actualmente la firma de llamada no coincide con varios pipelines.
+
+### 4. Impedir ejecución no auditada
+
+Si EventLog es obligatorio:
+
+```text
+audit failure ≠ pass
+```
+
+### 5. Un único runtime de ejecución
+
+Eliminar caminos alternativos.
+
+---
+
+# 33. P1 — el gran salto arquitectónico
+
+Después:
+
+### 6. Hacer Pydantic realmente dominante
+
+Pasar de:
+
+```python
+dict[str, Any]
+```
+
+a:
+
+```python
+Intent
+Mission
+TaskPlan
+TaskNode
+MicroAction
+Command
+ToolInput
+ToolOutput
+PipelineResult
+AgentResult
+PolicyDecision
+```
+
+con contratos cerrados.
+
+### 7. Crear `MissionCompiler`
+
+Este sería, para mí, **el componente central que falta**.
+
+### 8. Crear `CapabilityMatcher`
+
+No:
+
+```python
+if "gmail"...
+```
+
+sino:
+
+```text
+semantic intent
+ ↓
+ontology
+ ↓
+taxonomy
+ ↓
+capability candidates
+ ↓
+constraints
+ ↓
+risk
+ ↓
+tenant availability
+ ↓
+agent
+```
+
+### 9. Crear `AgentMatcher`
+
+Algo del estilo:
+
+```text
+request
+ ↓
+required capabilities
+ ↓
+ontology compatibility
+ ↓
+skills
+ ↓
+SOP
+ ↓
+historical success
+ ↓
+risk
+ ↓
+cost
+ ↓
+latency
+ ↓
+agent score
+```
+
+Ahí sí empieza a aparecer tu **matchmaking estadístico**.
+
+---
+
+# 34. P2 — endurecimiento enterprise
+
+Después:
+
+```text
+OIDC/JWT
+Secret Manager
+Vault/KMS
+Postgres como primary
+Redis
+distributed scheduler
+distributed locks
+idempotency keys
+event versioning
+schema versioning
+dead-letter queue
+trace propagation
+OpenTelemetry
+approval service
+RBAC/ABAC
+resource-level permissions
+```
+
+---
+
+# 35. P3 — conectar el mundo real
+
+Y **solo entonces**:
+
+```text
+Google
+Microsoft
+Slack
+WhatsApp
+HubSpot
+Salesforce
+Meta
+LinkedIn
+Stripe
+Shopify
+GitHub
+Vercel
+...
+```
+
+No antes.
+
+Porque conectar 44 proveedores sobre una arquitectura con dos caminos de ejecución sería multiplicar el problema por 44.
+
+---
+
+# 36. Algo importante: NO creo que debas rehacer el repo
+
+Después de leerlo, **no te recomendaría tirar esto y empezar otra vez**.
+
+Hay suficiente arquitectura buena para conservar.
+
+Yo haría una operación de:
+
+# **consolidación del runtime**
+
+No de reescritura.
+
+La estructura actual puede sobrevivir:
+
+```text
+kernel/
+cognition/
+execution/
+orchestration/
+connectors/
+interfaces/
+infrastructure/
+domains/
+```
+
+Lo que necesita cirugía es principalmente:
+
+```text
+orchestration
+execution
+contracts
+```
+
+y la frontera entre ellas.
+
+---
+
+# 37. Mi diagnóstico final
+
+Ahora mismo yo describiría tu sistema así:
+
+```text
+                 AGENTIC OS
+                     │
+          ┌──────────┴──────────┐
+          │                     │
+      ESPECIFICACIÓN         RUNTIME
+          │                     │
+          │               ┌─────┴─────┐
+          │               │           │
+       MUY BUENA       CORE REAL    STUBS
+          │               │           │
+          │               │        MCP/VSM
+          │               │        providers
+          │               │        tools
+          │               │        pipelines
+          │               │
+          └───────────────┴─────────────
+                         ↑
+                  HAY QUE CERRAR
+                  ESTA BRECHA
+```
+
+Y la frase que mejor resume el audit es:
+
+> **No necesitas añadirle más arquitectura. Necesitas hacer que la arquitectura que ya has diseñado sea imposible de violar desde el runtime.**
+
+Ahí está el verdadero salto.
+
+Y especialmente en tu caso, **Pydantic es precisamente la herramienta para conseguirlo**: no como “validación de inputs”, sino como **lenguaje contractual del sistema**.
+
+Tu siguiente versión debería conseguir que algo como esto sea imposible:
+
+```python
+tool.run(...)
+```
+
+si no existe previamente:
+
+```text
+Intent
+→ TaskPlan
+→ TaskNode
+→ MicroAction
+→ Capability
+→ PolicyDecision
+→ Command
+→ Executor
+→ Tool
+→ Result
+→ Event
+```
+
+Cuando eso esté cerrado, entonces sí tendrás algo mucho más interesante que “un framework de agentes”: tendrás **un runtime agéntico determinista con una máquina de compilación semántica encima**.
+
+**Ese es el punto al que yo llevaría este repo.** 
