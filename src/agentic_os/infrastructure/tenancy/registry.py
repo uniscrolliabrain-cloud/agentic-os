@@ -13,13 +13,28 @@ class TenantRegistry:
 
     Los tenants se persisten en disco (data/tenants/registry.json) para que
     sobrevivan a reinicios. En producción esto se movería a una base de datos.
+
+    SINGLETON dentro del proceso: todas las instancias comparten el estado en
+    memoria (PolicyEngine._tenant() y rest.py usan el mismo registro), de modo
+    que un tenant creado/inyectado por la API es visible para las decisiones
+    de policy.
     """
 
+    _SHARED_INSTANCE = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._SHARED_INSTANCE is None:
+            cls._SHARED_INSTANCE = super().__new__(cls)
+        return cls._SHARED_INSTANCE
+
     def __init__(self, registry_path: Optional[Path] = None):
+        if getattr(self, "_initialized", False):
+            return
         self.path = registry_path or Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "tenants" / "registry.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._tenants: Dict[str, Tenant] = {}  # key: id
         self._slug_index: Dict[str, str] = {}  # slug -> id
+        self._initialized = True
         self._load()
 
     def _load(self) -> None:

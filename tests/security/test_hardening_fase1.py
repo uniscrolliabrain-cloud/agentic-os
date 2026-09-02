@@ -37,24 +37,26 @@ def test_tenant_public_nunca_expone_credentials():
 
 def test_api_tenants_nunca_filtra_secret(monkeypatch):
     """GET /api/tenants con un tenant cuya config tiene credentials NUNCA
-    devuelve el valor en el body."""
+    devuelve el valor en el body (endpoint admin-only tras el hardening)."""
     from agentic_os.infrastructure.tenancy.registry import TenantRegistry
     from agentic_os.infrastructure.tenancy.models import Tenant
     from agentic_os.interfaces.api import rest as rest_mod
 
+    # GET /api/tenants exige admin (hardening): configuramos la clave de test
+    # y la enviamos por cabecera. Sin clave -> 401.
+    monkeypatch.setattr(rest_mod.settings, "admin_api_key", "admin-key-test")
+
     # preparar un tenant con credencial sensible en el registry compartido
     t = Tenant(slug="acme", config=_tenant_config(credentials={"hubspot": {"token": "secret-xyz"}}))
-    registry = TenantRegistry()
-    reg = registry or rest_mod._tenant_registry
-    # registro limpio
-    for old in list(reg._tenants.values()):
-        pass
-    # inyectar en memoria
     rest_mod._tenant_registry._tenants[t.id] = t
     rest_mod._tenant_registry._slug_index[t.slug] = t.id
     try:
         with TestClient(rest_mod.app) as client:
-            r = client.get("/api/tenants")
+            # sin admin -> 401
+            r_unauth = client.get("/api/tenants")
+            assert r_unauth.status_code == 401
+
+            r = client.get("/api/tenants", headers={"X-Admin-Key": "admin-key-test"})
             assert r.status_code == 200
             assert "secret-xyz" not in r.text
             assert "credentials" not in r.text

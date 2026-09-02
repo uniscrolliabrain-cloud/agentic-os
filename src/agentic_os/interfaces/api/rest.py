@@ -446,23 +446,44 @@ _policy_engine = PolicyEngine()
 _scheduler = Scheduler(data_dir=DATA_DIR, event_log=_event_log, on_trigger=None)
 
 
-def _run_scheduled_pipeline(pipeline_id: str, tenant_id: str) -> dict:
+def _run_scheduled_pipeline(
+    pipeline_id,
+    tenant_id,
+    correlation_id=None,
+    command_id=None,
+):
     """Callback del scheduler: ejecuta el pipeline auditando en el EventLog."""
-    if tenant_id != "system" and _tenant_registry.get(tenant_id) is None:
-        result = {"status": "TENANT_NOT_FOUND", "tenant_id": tenant_id}
-    else:
-        result = _orchestrator.handle_pipeline(
-            pipeline_id, tenant_id, executor=_executor, registry=_executor.registry
+    tenant = _tenant_registry.get(tenant_id)
+    if tenant is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Tenant no encontrado",
         )
+
+    result = _orchestrator.handle_pipeline(
+        pipeline_id=pipeline_id,
+        tenant_id=tenant_id,
+        executor=_executor,
+        registry=_executor.registry,
+        correlation_id=correlation_id,
+        command_id=command_id,
+    )
+
     _event_log.append(
         Event(
             kind="ScheduledPipelineFinished",
             entity_id=f"pipeline://{pipeline_id}",
             tenant_id=tenant_id,
             actor_id="scheduler",
-            payload={"pipeline_id": pipeline_id, "status": result.get("status")},
+            payload={
+                "pipeline_id": pipeline_id,
+                "status": result.get("status"),
+            },
+            correlation_id=correlation_id,
+            command_id=command_id,
         )
     )
+
     return result
 
 
@@ -484,7 +505,6 @@ class TenantOut(BaseModel):
     slug: str
     config: Dict[str, Any]
     created_at: str
-    api_key: Optional[str] = None
 
 class ExecuteRequest(BaseModel):
     tenant_id: Optional[str] = None  # DEPRECATED (FASE 4): ignorado; el tenant se resuelve por cabecera X-Tenant-Id
@@ -505,7 +525,7 @@ class ToolOut(BaseModel):
     name: str
 
 @app.get("/api/tenants", response_model=List[TenantOut])
-def list_tenants() -> List[TenantOut]:
+def list_tenants(_: bool = Depends(admin_scope)) -> List[TenantOut]:
     return [TenantOut(id=t.id, name=t.config.name, slug=t.slug, config=TenantConfigPublic.from_config(t.config).model_dump(), created_at=t.created_at.isoformat()) for t in _tenant_registry.list_all()]
 
 @app.post("/api/tenants", response_model=TenantOut, status_code=201)
@@ -525,11 +545,10 @@ def create_tenant(req: TenantCreate, _: bool = Depends(admin_scope)) -> TenantOu
         slug=tenant.slug,
         config=TenantConfigPublic.from_config(tenant.config).model_dump(),
         created_at=tenant.created_at.isoformat(),
-        api_key=tenant.config.credentials.get("api_key"),
     )
 
 @app.get("/api/tenants/{tenant_id}", response_model=TenantOut)
-def get_tenant(tenant_id: str) -> TenantOut:
+def get_tenant(tenant_id: str, _: bool = Depends(admin_scope)) -> TenantOut:
     tenant = _tenant_registry.get(tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
@@ -588,8 +607,8 @@ def execute(req: ExecuteRequest, scope: str = Depends(tenant_scope)) -> ExecuteR
                 error=result.get("error", f"Acción '{req.action}' denegada o fallida"),
             )
         return ExecuteResponse(success=True, result=result.get("output", result))
-    except Exception as e:
-        return ExecuteResponse(success=False, result=None, error=str(e))
+    except Exception:
+        return ExecuteResponse(success=False, result=None, error="execution failed")
 
 
 # ---------------------------------------------------------------- FASE 6 ----

@@ -1,135 +1,187 @@
 from __future__ import annotations
 
-from typing import Optional
-import os
 import json
+import os
 from pathlib import Path
+from typing import Optional
 
-from.approval import ApprovalRequest
-from.evaluator import Decision, PolicyEvaluator
-from.models import Policy, PolicyRule
-from...infrastructure.config.settings import settings
+from .approval import ApprovalRequest
+from .evaluator import Decision, PolicyEvaluator
+from .models import Policy, PolicyRule
+from ..types.ids import new_id
+
+
+def _dev_allow_all() -> bool:
+    return os.environ.get(
+        "DEV_ALLOW_ALL",
+        "false",
+    ).lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
 
 def default_policy(tenant_id: str = "default") -> Policy:
-    """
-    Política por defecto POR TENANT.
 
-    El allow-all SOLO se activa con DEV_ALLOW_ALL=true (flag explícito, default false).
-    ENV=dev por sí solo NO cambia la semántica de seguridad: en ausencia de
-    DEV_ALLOW_ALL, la política por defecto es deny-all incluso en dev.
-
-    Nota de seguridad (Fase 1 hardening): antes esto disparaba allow-all
-    automáticamente con settings.env == "dev", lo que era un allow-all implícito.
-    """
     if _dev_allow_all():
         return Policy(
             id=f"default-{tenant_id}",
-            name=f"default-allow-{tenant_id}",
+            name=f"default-dev-{tenant_id}",
             rules=[
                 PolicyRule(
                     id=f"allow-all-{tenant_id}",
                     capability="*",
                     effect="allow",
                     requires_roles=[],
-                    description=(
-                        f"Default allow SOLO con DEV_ALLOW_ALL=true "
-                        f"(tenant {tenant_id}), para desarrollo sin tenants configurados"
-                    ),
+                    description="DEV ONLY",
                 )
             ],
         )
-    # Sin DEV_ALLOW_ALL: sin reglas = deny by default (también en dev)
+
     return Policy(
         id=f"default-{tenant_id}",
         name=f"default-deny-{tenant_id}",
         rules=[],
     )
 
-def _dev_allow_all() -> bool:
-    """Flag explicito. ENV=dev NO lo activa.
-    
-    Nota (Fase 1 hardening): esto es el UNICO disparador del allow-all.
-    """
-    return os.environ.get("DEV_ALLOW_ALL", "false").lower() in ("1", "true", "yes")
 
 class PolicyEngine:
-    """Motor de políticas determinista con aislamiento multi-tenant."""
+    """
+    Único punto de decisión de autorización.
 
-    def __init__(self, policy: Optional[Policy] = None, tenant_id: str = "default"):
+    Regla:
+        tenant -> capabilities -> policy -> decision
+
+    Ningún caller debe usar una policy global para ejecutar
+    una acción perteneciente a un tenant.
+    """
+
+    def __init__(
+        self,
+        policy: Optional[Policy] = None,
+        tenant_id: str = "default",
+    ):
         self.tenant_id = tenant_id
         self.policy = policy or default_policy(tenant_id)
-        self.evaluator = PolicyEvaluator(self.policy)
+        # policy inyectada explícitamente (tests/ejecución de tools) se evalúa
+        # cuando no hay tenant_id; la default-deny nunca se salta el fail-closed.
+        self._has_explicit_policy = policy is not None
 
-    def _get_tenant(self, tenant_id: str):
-        """Resuelve el Tenant (para leer enabled_capabilities) o None sin dep fuerte de tenancy."""
+    def _tenant(self, tenant_id: str):
         try:
             from ...infrastructure.tenancy import TenantRegistry
             return TenantRegistry().get(tenant_id)
         except Exception:
             return None
 
-    def _load_tenant_policy(self, tenant_id: str) -> Optional[Policy]:
-        """Intenta cargar data/policies/{tenant_id}.json si existe."""
-        policy_path = Path(f"data/policies/{tenant_id}.json")
-        if policy_path.exists():
-            try:
-                data = json.loads(policy_path.read_text(encoding="utf-8"))
-                return Policy(**data)
-            except Exception:
-                return None
-        return None
-
-    def can(
+    def _load_policy(
         self,
+        tenant_id: str,
+    ) -> Policy:
+
+        path = Path(
+            f"data/policies/{tenant_id}.json"
+        )
+
+        if path.exists():
+            try:
+                return Policy(
+                    **json.loads(
+                        path.read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                )
+            except Exception:
+                # Policy corrupta = deny.
+                return default_policy(tenant_id)
+
+        return default_policy(tenant_id)
+
+    def decide(
+        self,
+        tenant_id: str,
         capability: str,
         resource_kind: Optional[str] = None,
         roles: Optional[list[str]] = None,
     ) -> Decision:
-        # Si la política es allow-all pero sin DEV_ALLOW_ALL, denegar.
-        if not _dev_allow_all():
-            if any(r.capability == "*" and r.effect == "allow" for r in self.policy.rules):
-                return Decision(effect="deny", reason="allow-all sin DEV_ALLOW_ALL")
 
-        return self.evaluator.evaluate(capability, resource_kind, roles or [])
+        if not tenant_id:
+            if self._has_explicit_policy:
+                return PolicyEvaluator(self.policy).evaluate(
+                    capability,
+                    resource_kind,
+                    roles or [],
+                )
+            return Decision(
+                effect="deny",
+                reason="tenant_id obligatorio",
+            )
 
-    def is_allowed(self, tenant_id: str, action: str) -> bool:
-        """
-        AHORA SÍ mira policy del tenant + enabled_capabilities.
-        No decide por el engine global de otro tenant.
-        """
-        # 0. enabled_capabilities del tenant (aislamiento real): si la capability
-        # no está habilitada para este tenant, deny — incluso con DEV_ALLOW_ALL.
-        tenant = self._get_tenant(tenant_id)
-        if tenant is not None:
-            enabled = list(tenant.config.enabled_capabilities)
-            if enabled and action not in enabled:
-                return False
-            if not enabled:
-                # Sin capabilities habilitadas: deny (el tenant no participa del allow-all)
-                return False
+        if tenant_id == "system":
+            policy = self._load_policy(tenant_id)
+        else:
+            tenant = self._tenant(tenant_id)
 
-        # 1. Intentar cargar policy específica del tenant
-        tenant_policy = self._load_tenant_policy(tenant_id)
-        if tenant_policy:
-            evaluator = PolicyEvaluator(tenant_policy)
-            decision = evaluator.evaluate(action, None, [])
-            return decision.effect == "allow"
+            if tenant is None:
+                # Tenant no registrado: con DEV_ALLOW_ALL=true, permite
+                # (tests con tenants efímeros). Sin él, deny.
+                if _dev_allow_all():
+                    return Decision(
+                        effect="allow",
+                        reason="DEV_ALLOW_ALL=true",
+                    )
+                return Decision(
+                    effect="deny",
+                    reason=(
+                        f"policy: tenant "
+                        f"'{tenant_id}' no encontrado"
+                    ),
+                )
 
-        # 2. Si no hay policy del tenant, usar la del engine si es del mismo tenant
-        if tenant_id == self.tenant_id:
-            decision = self.evaluator.evaluate(action, None, [])
-            return decision.effect == "allow"
+            enabled = set(
+                tenant.config.enabled_capabilities
+            )
 
-        # 3. Si piden otro tenant y no tiene policy, crear default para ese tenant
-        default = default_policy(tenant_id)
-        evaluator = PolicyEvaluator(default)
-        decision = evaluator.evaluate(action, None, [])
+            if capability not in enabled:
+                return Decision(
+                    effect="deny",
+                    reason=(
+                        f"capability '{capability}' "
+                        f"no habilitada para tenant "
+                        f"'{tenant_id}'"
+                    ),
+                )
 
-        # Sin DEV_ALLOW_ALL, default es deny (también en dev)
-        if not _dev_allow_all():
-            return False
+            if _dev_allow_all():
+                return Decision(
+                    effect="allow",
+                    reason="DEV_ALLOW_ALL=true",
+                )
 
-        return decision.effect == "allow"
+            policy = self._load_policy(tenant_id)
+
+        if (
+            not _dev_allow_all()
+            and any(
+                rule.capability == "*"
+                and rule.effect == "allow"
+                for rule in policy.rules
+            )
+        ):
+            return Decision(
+                effect="deny",
+                reason="allow-all requiere DEV_ALLOW_ALL=true",
+            )
+
+        evaluator = PolicyEvaluator(policy)
+
+        return evaluator.evaluate(
+            capability,
+            resource_kind,
+            roles or [],
+        )
 
     def can_for_tenant(
         self,
@@ -138,34 +190,32 @@ class PolicyEngine:
         resource_kind: Optional[str] = None,
         roles: Optional[list[str]] = None,
     ) -> Decision:
-        """Evalúa una capability contra la policy del tenant (o default deny).
 
-        Aislamiento multi-tenant real: nunca se usa una regla de un tenant distinto
-        para decidir sobre otro, y enabled_capabilities del tenant es parte de la
-        decisión: si la capability no está habilitada, deny (incluso con DEV_ALLOW_ALL).
-        """
-        # 0. enabled_capabilities antes de cualquier otra regla
-        tenant = self._get_tenant(tenant_id)
-        if tenant is not None:
-            enabled = list(tenant.config.enabled_capabilities)
-            if enabled and capability not in enabled:
-                return Decision(effect="deny", reason=f"{capability} no habilitada para tenant {tenant_id}")
-            if not enabled:
-                return Decision(effect="deny", reason=f"tenant {tenant_id} sin capabilities habilitadas")
+        return self.decide(
+            tenant_id=tenant_id,
+            capability=capability,
+            resource_kind=resource_kind,
+            roles=roles,
+        )
 
-        policy = self._load_tenant_policy(tenant_id)
-        if policy is None:
-            policy = default_policy(tenant_id)
+    def is_allowed(
+        self,
+        tenant_id: str,
+        action: str,
+    ) -> bool:
 
-        # Si la política resultante es allow-all pero sin DEV_ALLOW_ALL, negar.
-        if not _dev_allow_all():
-            if any(r.capability == "*" and r.effect == "allow" for r in policy.rules):
-                return Decision(effect="deny", reason=f"allow-all sin DEV_ALLOW_ALL no permitido para {tenant_id}")
+        return (
+            self.decide(
+                tenant_id,
+                action,
+            ).effect
+            == "allow"
+        )
 
-        evaluator = PolicyEvaluator(policy)
-        return evaluator.evaluate(capability, resource_kind, roles or [])
-
-    def requires_approval(self, decision: Decision) -> bool:
+    def requires_approval(
+        self,
+        decision: Decision,
+    ) -> bool:
         return decision.effect == "require_approval"
 
     def request_approval(
@@ -174,7 +224,9 @@ class PolicyEngine:
         capability: str,
         resource_id: Optional[str] = None,
     ) -> ApprovalRequest:
+
         return ApprovalRequest(
+            id=new_id(),
             actor_id=actor_id,
             capability=capability,
             resource_id=resource_id,
