@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import re
+import socket
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 import httpx
+
+from agentic_os.execution.tools.base import ToolValidationError
 
 from .errors import (
     AuthenticationError,
@@ -21,6 +24,7 @@ from .errors import (
 )
 
 SENSITIVE_HEADERS = {"authorization", "authorization", "cookie", "set-cookie"}
+LINK_LOCAL_NET = ipaddress.ip_network("169.254.0.0/16")
 
 
 def _safe_headers(headers: Optional[Dict[str, str]]) -> Dict[str, str]:
@@ -67,13 +71,28 @@ class HttpClient:
         self._client = None
 
     @staticmethod
+    def _is_blocked_ip(addr: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]) -> bool:
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_unspecified
+            or str(addr) in ("0.0.0.0", "::")
+        ):
+            return True
+        if isinstance(addr, ipaddress.IPv4Address) and addr in LINK_LOCAL_NET:
+            return True
+        return False
+
+    @staticmethod
     def _is_ssrf(url: str) -> bool:
         """Protección SSRF fail-closed.
 
         Bloquea los rangos de red privados/loopback/link-local/multicast/
         unspecified y las representaciones alternas de IP (decimal, octal, hex)
-        que algunos clientes resuelven aunque `urlparse` no las normalice.
-        Si la URL no se puede validar -> se bloquea.
+        así como la resolución DNS hacia dichos rangos (DNS rebinding).
+        Si la URL no se puede validar o DNS falla -> se bloquea.
         """
         try:
             parsed = urlparse(url)
@@ -85,34 +104,36 @@ class HttpClient:
 
         lowered = host.strip("[]").lower()
 
-        # 1) IPv4/IPv6 directa: descartar según propiedades del address.
+        # 1) IPv4/IPv6 directa
         try:
             addr = ipaddress.ip_address(lowered)
+            return HttpClient._is_blocked_ip(addr)
         except ValueError:
-            addr = None
+            pass
 
-        if addr is not None:
-            return (
-                addr.is_loopback
-                or addr.is_link_local
-                or addr.is_multicast
-                or addr.is_private
-                or addr.is_unspecified
-                or addr.is_reserved
-            )
-
-        # 2) IPv6 no parseable (zona, malformado) -> fail-closed.
+        # 2) IPv6 no parseable con dos puntos
         if ":" in lowered:
             return True
 
-        # 3) Nombres de host locales.
-        if lowered in {"localhost", "localtest.me", "0"}:
-            return True
-        if lowered.endswith(".localhost"):
+        # 3) Nombres de host locales conocidos
+        if lowered in {"localhost", "localtest.me", "0"} or lowered.endswith(".localhost"):
             return True
 
-        # 4) Representaciones alternas de IP (decimal/octal/hex, octetos mixtos).
+        # 4) Representaciones alternas de IP
         if HttpClient._is_alt_ip(lowered):
+            return True
+
+        # 5) Resolución DNS para verificar todas las direcciones IP (v4 y v6)
+        try:
+            infos = socket.getaddrinfo(lowered, None)
+            if not infos:
+                return True
+            for info in infos:
+                ip_str = info[4][0]
+                addr = ipaddress.ip_address(ip_str)
+                if HttpClient._is_blocked_ip(addr):
+                    return True
+        except Exception:
             return True
 
         return False
@@ -121,18 +142,13 @@ class HttpClient:
     def _is_alt_ip(host: str) -> bool:
         """Detecta IPs en notación decimal entera, octal, hex u octetos mixtos."""
 
-        # Entero sin puntos en decimal: "2130706433" -> 127.0.0.1
+        # Entero sin puntos en decimal
         if re.fullmatch(r"[0-9]{1,10}", host):
             try:
                 addr = ipaddress.ip_address(int(host))
             except ValueError:
                 return False
-            return (
-                addr.is_private
-                or addr.is_loopback
-                or addr.is_link_local
-                or addr.is_unspecified
-            )
+            return HttpClient._is_blocked_ip(addr)
 
         # Entero hex: "0x7f000001"
         if re.fullmatch(r"0[xX][0-9a-fA-F]{1,8}", host):
@@ -140,12 +156,7 @@ class HttpClient:
                 addr = ipaddress.ip_address(int(host, 16))
             except ValueError:
                 return False
-            return (
-                addr.is_private
-                or addr.is_loopback
-                or addr.is_link_local
-                or addr.is_unspecified
-            )
+            return HttpClient._is_blocked_ip(addr)
 
         # Entero octal: "017700000001"
         if re.fullmatch(r"0[0-7]{1,11}", host):
@@ -153,14 +164,9 @@ class HttpClient:
                 addr = ipaddress.ip_address(int(host, 8))
             except ValueError:
                 return False
-            return (
-                addr.is_private
-                or addr.is_loopback
-                or addr.is_link_local
-                or addr.is_unspecified
-            )
+            return HttpClient._is_blocked_ip(addr)
 
-        # IPv4 con octetos alternos: "0177.0.0.1", "0x7f.0.0.1", "127.1"
+        # IPv4 con octetos alternos
         parts = host.split(".")
         if 2 <= len(parts) <= 4:
             octets = []
@@ -181,12 +187,7 @@ class HttpClient:
                     addr = ipaddress.ip_address(bytes(octets))
                 except ValueError:
                     return False
-                return (
-                    addr.is_private
-                    or addr.is_loopback
-                    or addr.is_link_local
-                    or addr.is_unspecified
-                )
+                return HttpClient._is_blocked_ip(addr)
 
         return False
 
@@ -203,7 +204,7 @@ class HttpClient:
         timeout: Optional[float] = None,
     ) -> httpx.Response:
         if self._is_ssrf(url):
-            raise ValidationError(f"URL bloqueada por SSRF protection: {url}")
+            raise ToolValidationError("SSRF blocked")
 
         client = self._client or httpx.AsyncClient(timeout=self.timeout, http2=False)
         attempt = 0
