@@ -27,7 +27,7 @@ def test_http_client_redacts_sensitive_headers():
     assert safe["Content-Type"] == "application/json"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_http_client_context_manager_session_lifecycle():
     client = HttpClient(timeout_s=15.0, retries=2)
     assert client._client is None
@@ -43,7 +43,7 @@ def test_http_client_timeout_and_config():
     assert client.retries == 5
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_http_client_ssrf_blocking_local_and_private_ips():
     client = HttpClient()
     
