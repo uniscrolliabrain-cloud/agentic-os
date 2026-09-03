@@ -3,3 +3,4 @@ streamlit
 fastapi
 uvicorn
 apscheduler
+groq>=0.4.0

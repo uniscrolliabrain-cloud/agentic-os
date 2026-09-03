@@ -4,11 +4,24 @@ import base64
 import json
 import logging
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 from ..core.config import CredentialSet
 
 logger = logging.getLogger(__name__)
+
+
+def _secret_value(value: Any) -> str:
+    """Desenvuelve pydantic Secret/SecretStr; str() plano para lo demás.
+
+    str(Secret) devuelve la máscara '**********', NUNCA el valor real:
+    usar str() directamente destruiría las credenciales al guardarlas.
+    """
+    getter = getattr(value, "get_secret_value", None)
+    if callable(getter):
+        return str(getter())
+    return str(value)
+
 
 
 def _cred_path(workspace: str, provider: str, base: Path | None = None) -> Path:
@@ -89,7 +102,7 @@ class CredentialStore:
         data = {
             "provider": provider,
             "auth_type": credential_set.auth_type,
-            "data": {k: EncodedFileCredentialStore.encrypt(str(v)) for k, v in credential_set.data.items()},
+            "data": {k: EncodedFileCredentialStore.encrypt(_secret_value(v)) for k, v in credential_set.data.items()},
             "expires_at": credential_set.expires_at.isoformat() if credential_set.expires_at else None,
             "scopes": credential_set.scopes,
         }

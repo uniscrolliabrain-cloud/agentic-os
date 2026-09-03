@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import uuid4
 
+from ...kernel.types.time import now_utc
 from ..core.models import Command
 
 
@@ -21,7 +21,7 @@ class TelemetryEvent:
     ):
         self.event_id = str(uuid4())
         self.event_type = event_type
-        self.timestamp = datetime.utcnow()
+        self.timestamp = now_utc()
         self.workspace_id = workspace_id
         self.correlation_id = correlation_id or command.correlation_id
         self.command_id = command.execution_id

@@ -19,8 +19,9 @@ from ...infrastructure.config.settings import settings
 from ...infrastructure.persistence import get_eventlog_repo
 from ...infrastructure.tenancy import Tenant, TenantConfig, TenantConfigPublic, TenantContext, TenantRegistry
 from ...interfaces.llm.chat import FrontAssistant
-from ...interfaces.llm.provider import GeminiProvider, MockLLMProvider
+from ...interfaces.llm.provider import FallbackLLMProvider, GeminiProvider, GroqProvider, MockLLMProvider
 from ...kernel.policy.engine import PolicyEngine
+from ...kernel.types.time import now_utc
 from ...kernel.world.events import Event
 from ...orchestration.orchestrator import Orchestrator
 from ...orchestration.scheduler import Scheduler
@@ -111,23 +112,45 @@ def admin_scope(
 
 _event_log = get_eventlog_repo()
 
-if settings.gemini_api_key:
-    _llm = GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
-else:
-    _llm = MockLLMProvider(
+def _build_llm():
+    primary = None
+    fallback = None
+    if settings.gemini_api_key:
+        try:
+            primary = GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+        except Exception:
+            primary = None
+    groq_key = getattr(settings, 'groq_api_key', None) or getattr(settings, 'GROQ_API_KEY', None)
+    if groq_key:
+        try:
+            fallback = GroqProvider(api_key=groq_key, model=getattr(settings, 'groq_model', 'llama-3.3-70b-versatile'))
+        except Exception:
+            fallback = None
+    if primary and fallback:
+        return FallbackLLMProvider(primary=primary, fallback=fallback)
+    if primary:
+        return primary
+    if fallback:
+        return fallback
+    return MockLLMProvider(
         default_response=(
             '{"goal": "responder al usuario", "kind": "reply_to_user", '
             '"entity_id": "n/a", "payload": "", "rationale": "mock sin API key", '
-            '"reply_to_user": "Hola! Soy el director (modo mock). Configura GEMINI_API_KEY en .env para respuestas reales."}'
+            '"reply_to_user": "Hola! Soy el director (modo mock). Configura GEMINI_API_KEY o GROQ_API_KEY en .env para respuestas reales."}'
         )
     )
 
+_llm = _build_llm()
 _orchestrator = Orchestrator(log=_event_log, llm=_llm)
 _front_assistant = FrontAssistant(
     model_name=settings.gemini_chat_model,
     api_key=settings.gemini_api_key,
     temperature=settings.gemini_temperature,
 )
+try:
+    _front_assistant.provider = _llm
+except Exception:
+    pass
 
 _tasks_lock = threading.Lock()
 _background_tasks: Dict[str, Any] = {}
@@ -251,22 +274,40 @@ def _append_message_to_conversation(conv_id: str, role: str, content: str, scope
     conv["messages"].append({"role": role, "content": content})
     if len(conv["messages"]) == 1:
         conv["title"] = content[:50] + ("..." if len(content) > 50 else "")
-    conv["updated_at"] = datetime.utcnow().isoformat()
+    conv["updated_at"] = now_utc().isoformat()
     _save_conversation(conv)
 
+# Mapping canónico determinista intent.kind → capability/action del ToolRegistry.
+# El LLM (o el router) propone el kind; la decisión de qué acción está permitida
+# es SOLO de esta tabla — sin heurísticas de substring.
+ACTION_BY_KIND: Dict[str, str] = {
+    # email
+    "send_email": "gmail_send",
+    "send_correo": "gmail_send",
+    "email": "gmail_send",
+    # slack
+    "send_slack": "slack_send",
+    "slack": "slack_send",
+    # whatsapp
+    "send_whatsapp": "whatsapp_send",
+    "whatsapp": "whatsapp_send",
+    # calendar
+    "create_event": "calendar_create_event",
+    "create_appointment": "calendar_create_event",
+    "schedule_meeting": "calendar_create_event",
+    "calendar": "calendar_create_event",
+    # web
+    "web_scrape": "web_scrape",
+    "scrape_web": "web_scrape",
+}
+
 def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
-    k = (kind or "").lower()
-    if any(t in k for t in ("email", "correo", "gmail", "mail")):
-        return "gmail_send"
-    if "slack" in k:
-        return "slack_send"
-    if "whatsapp" in k:
-        return "whatsapp_send"
-    if any(t in k for t in ("calendar", "calendario", "meeting", "reuni", "cita", "evento", "schedule")):
-        return "calendar_create_event"
-    if any(t in k for t in ("scrape", "scrap", "web", "url")):
-        return "web_scrape"
-    return None
+    """Resuelve el kind canónico de un Intent a su action del Executor.
+
+    Determinista: lookup exacto en ACTION_BY_KIND (normalizado). Un kind
+    desconocido → None (no se ejecuta nada; fail-closed).
+    """
+    return ACTION_BY_KIND.get((kind or "").strip().lower())
 
 def _try_execute(action: Optional[str], intent: Intent, tenant_id: str) -> str:
     if action is None:
@@ -297,7 +338,7 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
             "status": "running",
             "message": message,
             "summary": "",
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": now_utc().isoformat(),
         }
     def _run() -> None:
         try:
@@ -324,7 +365,7 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                 except HTTPException:
                     pass
             with _tasks_lock:
-                _background_tasks[task_id].update(status="completed", summary=summary, ended_at=datetime.utcnow().isoformat())
+                _background_tasks[task_id].update(status="completed", summary=summary, ended_at=now_utc().isoformat())
         except Exception as e:
             _event_log.append(
                 Event(
@@ -341,7 +382,7 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                 except HTTPException:
                     pass
             with _tasks_lock:
-                _background_tasks[task_id].update(status="failed", summary=str(e), ended_at=datetime.utcnow().isoformat())
+                _background_tasks[task_id].update(status="failed", summary=str(e), ended_at=now_utc().isoformat())
     threading.Thread(target=_run, daemon=True).start()
     return task_id
 
@@ -411,7 +452,7 @@ def list_conversations(scope: str = Depends(tenant_scope)) -> List[ConversationS
 
 @app.post("/api/conversations", response_model=ConversationOut, status_code=201)
 def create_conversation(scope: str = Depends(tenant_scope)) -> ConversationOut:
-    now = datetime.utcnow().isoformat()
+    now = now_utc().isoformat()
     conv = {"id": str(uuid.uuid4()), "tenant_id": scope, "title": "Nueva conversación", "created_at": now, "updated_at": now, "messages": []}
     _save_conversation(conv)
     return ConversationOut(**conv)
@@ -427,7 +468,7 @@ def add_message(conv_id: str, msg: MessageOut, scope: str = Depends(tenant_scope
     conv["messages"].append({"role": msg.role, "content": msg.content})
     if len(conv["messages"]) == 1:
         conv["title"] = msg.content[:50] + ("..." if len(msg.content) > 50 else "")
-    conv["updated_at"] = datetime.utcnow().isoformat()
+    conv["updated_at"] = now_utc().isoformat()
     _save_conversation(conv)
     return ConversationOut(**conv)
 

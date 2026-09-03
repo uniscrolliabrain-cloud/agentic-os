@@ -20,6 +20,20 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# Baseline pragmático: errores graves (sintaxis, nombres indefinidos,
+# redefiniciones, recursos sin cerrar en funciones async). El resto de la
+# deuda de estilo (I001, UP035/UP006, RUF013, SIM102, BLE001...) está
+# registrada como pendiente y se normalizará incrementalmente.
+select = [
+    "E9",   # syntax-error en el parser
+    "F7",   # syntax error en annotation
+    "F821", # undefined name
+    "F811", # redefinition of unused
+    "F823", # local variable referenced before assignment
+    "B012", # break/continue/return in finally
+]
+
 [tool.mypy]
 strict = true
 

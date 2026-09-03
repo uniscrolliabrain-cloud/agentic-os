@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
 from .base import Tool, ToolValidationError
+from ...kernel.types.time import now_utc
 
 _DATA_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent / "data"
 
@@ -32,7 +32,7 @@ class GmailSendTool(Tool):
             "to": to,
             "subject": subject,
             "body_preview": body[:80],
-            "sent_at": datetime.utcnow().isoformat(),
+            "sent_at": now_utc().isoformat(),
             "message_id": f"gmail-{abs(hash(to + subject))}",
         }
 
@@ -115,7 +115,7 @@ class GmailCreateDraftTool(Tool):
             "to": to,
             "subject": subject,
             "body": body,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": now_utc().isoformat(),
             "status": "SIMULATED",
             "real_execution": False,
         }

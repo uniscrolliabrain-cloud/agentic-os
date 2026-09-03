@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict
 
+from ...kernel.types.time import now_utc
 from .base import Tool, ToolValidationError
 
 
@@ -23,7 +23,7 @@ class SlackSendTool(Tool):
             "real_execution": False,
             "channel": channel,
             "text_preview": text[:80],
-            "sent_at": datetime.utcnow().isoformat(),
+            "sent_at": now_utc().isoformat(),
             "ts": f"slack-{abs(hash(channel + text))}",
         }
 

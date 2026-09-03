@@ -5,10 +5,10 @@ import hmac
 import json
 import time
 import uuid
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from ...connectors.core.models import CommandResult
+from ...kernel.types.time import now_utc
 
 
 class WebhookEvent:
@@ -27,7 +27,7 @@ class WebhookEvent:
         self.external_id = external_id
         self.payload = payload
         self.workspace_id = workspace_id
-        self.received_at = datetime.utcnow()
+        self.received_at = now_utc()
 
 
 class WebhookRegistry:

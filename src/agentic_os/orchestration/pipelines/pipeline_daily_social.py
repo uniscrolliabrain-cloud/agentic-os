@@ -14,17 +14,17 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ...kernel.types.time import now_utc
 from . import register
 
 _DATA_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 
 def _today() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d")
+    return now_utc().strftime("%Y-%m-%d")
 
 
 def _summarize(content: str, max_len: int = 200) -> str:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime
+from ..kernel.types.time import now_utc
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -257,8 +257,7 @@ class Scheduler:
             "kind": "daily",
             "hour": hour,
             "created_at": (
-                datetime.utcnow()
-                .isoformat()
+                now_utc().isoformat()
             ),
         }
 
@@ -306,8 +305,7 @@ class Scheduler:
             "kind": "interval",
             "minutes": minutes,
             "created_at": (
-                datetime.utcnow()
-                .isoformat()
+                now_utc().isoformat()
             ),
         }
 
@@ -354,8 +352,15 @@ class Scheduler:
                 self._scheduler.remove_job(
                     schedule_id
                 )
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                # El job puede no existir en APS (p.ej. creado antes de start):
+                # el borrado del store (abajo) es la fuente de verdad, pero el
+                # fallo no se silencia.
+                logger.warning(
+                    "remove_job(%s) falló en APScheduler: %s",
+                    schedule_id,
+                    exc,
+                )
 
         self._save(
             tenant_id,

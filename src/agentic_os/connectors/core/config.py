@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, Secret
 
+from ...kernel.types.time import now_utc
+
 from ...infrastructure.config.settings import Settings
 
 
@@ -53,7 +55,12 @@ class CredentialSet(BaseModel):
     def is_expired(self) -> bool:
         if self.expires_at is None:
             return False
-        return datetime.utcnow() >= self.expires_at
+        # now_utc() es timezone-aware; normaliza expires_at naive→UTC
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            from datetime import timezone
+            expires = expires.replace(tzinfo=timezone.utc)
+        return now_utc() >= expires
 
 
 class ProviderManifest(BaseModel):

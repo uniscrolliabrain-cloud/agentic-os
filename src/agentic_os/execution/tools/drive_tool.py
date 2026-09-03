@@ -26,10 +26,15 @@ def _tenant_drive_dir(tenant_id: str) -> Path:
 
 
 def _safe_resolve(root: Path, folder: str) -> Path:
-    """Resuelve carpeta relativa a la raíz del tenant, sin escape."""
-    target = (root / folder).resolve()
+    """Resuelve ``folder`` relativa a la raíz del tenant, sin escape.
+
+    Usa comparación semántica de paths (``is_relative_to``) en lugar de
+    ``str(...).startswith`` para evitar el bypass de prefijos, p.ej.
+    ``tenants/acme/drive_evil`` compartiendo prefijo con ``tenants/acme/drive``.
+    """
     root_resolved = root.resolve()
-    if not str(target).startswith(str(root_resolved)):
+    target = (root_resolved / folder).resolve()
+    if not target.is_relative_to(root_resolved):
         raise ToolValidationError(f"ruta fuera de la cache del tenant: {folder!r}")
     return target
 

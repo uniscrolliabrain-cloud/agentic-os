@@ -38,7 +38,14 @@ class MCPServer:
         name: str,
         params: dict | None = None,
     ):
+        """Invoca un método MCP registrado con validación de contrato.
 
+        - el servidor debe estar iniciado (fail-closed),
+        - el método debe existir,
+        - params debe ser un objeto (dict) o None,
+        - el resultado debe ser estructurado (dict): un handler MCP nunca
+          devuelve None silenciosamente.
+        """
         if not self.running:
             raise RuntimeError(
                 "MCPServer no iniciado"
@@ -53,6 +60,19 @@ class MCPServer:
                 f"MCP method no encontrada: {name}"
             )
 
-        return handler(
+        if params is not None and not isinstance(params, dict):
+            raise TypeError(
+                f"MCP params debe ser un objeto (dict), recibido {type(params).__name__}"
+            )
+
+        result = handler(
             params or {}
         )
+
+        if not isinstance(result, dict):
+            raise TypeError(
+                f"MCP method {name!r} debe devolver un dict, "
+                f"recibido {type(result).__name__}"
+            )
+
+        return result

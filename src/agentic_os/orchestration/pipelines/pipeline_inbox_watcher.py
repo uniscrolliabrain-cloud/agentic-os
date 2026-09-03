@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+import logging
+from typing import Any, Dict, Optional
 
 from . import register
+
+logger = logging.getLogger(__name__)
 
 
 def _classify(
@@ -76,8 +79,13 @@ def _classify_with_llm(
         }:
             return result
 
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - fallback determinista
+        # No silencioso: el fallback determinista (_classify) se aplica igual,
+        # pero el fallo del LLM queda registrado.
+        logger.warning(
+            "clasificación LLM falló, usando fallback determinista: %s",
+            exc,
+        )
 
     return _classify(
         subject,

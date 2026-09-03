@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict
 
+from ...kernel.types.time import now_utc
 from .base import Tool, ToolValidationError
 
 
@@ -28,7 +28,7 @@ class CalendarCreateEventTool(Tool):
             "end": end or start,
             "attendees": attendees,
             "event_id": f"cal-{abs(hash(title + start))}",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": now_utc().isoformat(),
         }
 
 

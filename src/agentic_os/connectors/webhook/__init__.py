@@ -11,27 +11,34 @@ import hashlib
 import hmac
 import json
 import time
+import logging
 import uuid
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..core.models import CommandResult
 
+logger = logging.getLogger(__name__)
 
-class WebhookEvent(BaseModel := Any):
-    """Evento interno normalizado tras validar un webhook entrante."""
 
-    provider: str
+class WebhookEvent(BaseModel):
+    """Evento interno normalizado tras validar un webhook entrante.
+
+    Modelo Pydantic v2 real: valida tipos y rechaza datos inesperados.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: Optional[str] = None
+    event_id: str
     event_type: str
-    external_id: str
-    payload: Dict[str, Any]
-    received_at: datetime = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    received_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+    )
     workspace_id: Optional[str] = None
-
-    def __init__(self, **data):
-        data.setdefault("received_at", datetime.utcnow())
-        super().__init__(**data)
 
 
 class WebhookRegistry:
@@ -135,15 +142,27 @@ class WebhookReceiver:
         event = WebhookEvent(
             provider=provider,
             event_type=event_type,
-            external_id=event_id,
+            event_id=event_id,
             payload=payload,
         )
+        handler_errors: list[str] = []
         for handler in self.registry.handlers_for(event_type):
             try:
                 handler(event)
-            except Exception:
-                pass
-        return {"status": "processed", "event_id": event_id}
+            except Exception as exc:  # noqa: BLE001
+                # NO error silencioso: registrar y exponer en la respuesta.
+                logger.warning(
+                    "webhook handler %s falló para %s: %s",
+                    getattr(handler, "__name__", handler),
+                    event_id,
+                    exc,
+                    exc_info=exc,
+                )
+                handler_errors.append(f"{getattr(handler, '__name__', 'handler')}: {exc}")
+        result: dict = {"status": "processed", "event_id": event_id}
+        if handler_errors:
+            result["handler_errors"] = handler_errors
+        return result
 
     def _get_secret(self, env_key: Optional[str]) -> Optional[str]:
         if not env_key:

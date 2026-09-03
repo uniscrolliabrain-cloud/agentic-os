@@ -4,28 +4,29 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from pydantic import BaseModel, Field
+
+from ...kernel.types.time import now_utc
+
 from ..core.models import Command
 
 
-class AuditRecord(BaseModel := Any):
-    audit_id: str
-    workspace_id: Optional[str]
-    actor_id: Optional[str]
-    command_id: Optional[str]
+class AuditRecord(BaseModel):
+    model_config = {"from_attributes": True}
+
+    audit_id: str = Field(default_factory=lambda: str(uuid4()))
+    workspace_id: Optional[str] = None
+    actor_id: Optional[str] = None
+    command_id: Optional[str] = None
     capability: str
-    connector_id: Optional[str]
-    provider: Optional[str]
+    connector_id: Optional[str] = None
+    provider: Optional[str] = None
     operation: str
-    target: Optional[str]
+    target: Optional[str] = None
     status: str
-    timestamp: datetime = None
+    timestamp: datetime = Field(default_factory=now_utc)
     approval_reference: Optional[str] = None
     duration_ms: int = 0
-
-    def __init__(self, **data):
-        data.setdefault("timestamp", datetime.utcnow())
-        data.setdefault("audit_id", str(uuid4()))
-        super().__init__(**data)
 
 
 class AuditLog:

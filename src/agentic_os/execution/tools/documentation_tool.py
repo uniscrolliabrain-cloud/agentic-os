@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict
 
-from .base import Tool
+from .base import Tool, ToolValidationError
+from ...kernel.types.time import now_utc
 
 
 class DocumentationCreateTool(Tool):
@@ -17,7 +17,7 @@ class DocumentationCreateTool(Tool):
         tags = params.get("tags", [])
 
         if not title:
-            return {"error": "falta el campo title"}
+            raise ToolValidationError("falta el campo title")
 
         return {
             "status": "creado",
@@ -25,8 +25,9 @@ class DocumentationCreateTool(Tool):
             "content_preview": content[:80],
             "tags": tags,
             "doc_id": f"doc-{abs(hash(title))}",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": now_utc().isoformat(),
         }
+
 
 
 class DocumentationSearchTool(Tool):
