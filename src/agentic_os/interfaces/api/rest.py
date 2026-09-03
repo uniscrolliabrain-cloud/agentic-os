@@ -97,15 +97,17 @@ def admin_scope(
     x_admin_key: Optional[str] = Header(default=None, alias=_ADMIN_KEY_HEADER),
     x_api_key: Optional[str] = Header(default=None, alias=_API_KEY_HEADER),
 ) -> bool:
-    """Dependency: valida acceso de administrador global."""
+    """Dependency: valida acceso de administrador global (SIN bypass de dev).
+
+    Si ADMIN_API_KEY no está configurada, los endpoints admin fallan con 401
+    siempre (fail-closed). DEV_ALLOW_ALL jamás concede acceso admin.
+    """
     admin_key = settings.admin_api_key
-    if admin_key:
-        if x_admin_key == admin_key or x_api_key == admin_key:
-            return True
-        raise HTTPException(status_code=401, detail="Admin API key requerida o inválida")
-    if settings.dev_allow_all:
+    if not admin_key:
+        raise HTTPException(status_code=401, detail="ADMIN_API_KEY no configurada en el servidor")
+    if x_admin_key == admin_key or x_api_key == admin_key:
         return True
-    raise HTTPException(status_code=401, detail="ADMIN_API_KEY no configurada en el servidor")
+    raise HTTPException(status_code=401, detail="Admin API key requerida o inválida")
 
 _event_log = get_eventlog_repo()
 

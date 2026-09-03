@@ -285,6 +285,29 @@ class Executor:
                 ),
             }
 
+        if tid:
+            # Aislamiento de tenant: el tenant del contexto SIEMPRE gana.
+            # Un caller no puede sobreescribir tenant_id con un valor distinto
+            # del confirmado por policy/autenticación (fail-closed).
+            supplied_tenant = params.get("tenant_id")
+            if supplied_tenant is not None and supplied_tenant != tid:
+                self._audit(
+                    "ActionDenied",
+                    action,
+                    tid,
+                    {
+                        "reason": "tenant_id no puede ser sobreescrito",
+                        "params": self._params_summary(params),
+                    },
+                    actor,
+                    correlation_id,
+                    command_id,
+                )
+                return {
+                    "success": False,
+                    "error": "tenant_id no puede ser sobreescrito",
+                }
+
         self._audit(
             "ActionStarted",
             action,
@@ -302,7 +325,9 @@ class Executor:
 
             run_params = dict(params)
             if tid:
-                run_params.setdefault("tenant_id", tid)
+                # El tenant autenticado se inyecta SIEMPRE: las tools nunca
+                # confían en un tenant_id libre aportado por el caller.
+                run_params["tenant_id"] = tid
 
             output = tool.run(run_params)
 

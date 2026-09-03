@@ -81,8 +81,11 @@ class GmailCreateDraftTool(Tool):
     def run(self, params: Dict[str, Any]) -> Dict[str, Any]:
         from pathlib import Path
         import json
+        import re
         import uuid
 
+        # Aislamiento: el tenant_id SIEMPRE lo inyecta el Executor desde el
+        # contexto auditado. La tool nunca confía en un valor libre del caller.
         tenant_id = params.get("tenant_id", "")
         to = params.get("to", "")
         subject = params.get("subject", "")
@@ -90,11 +93,20 @@ class GmailCreateDraftTool(Tool):
 
         if not tenant_id:
             raise ToolValidationError("faltan campos: tenant_id es obligatorio")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,64}", tenant_id):
+            raise ToolValidationError("tenant_id inválido o path traversal")
         if not to or not subject:
             raise ToolValidationError("faltan campos: to y subject son obligatorios")
 
         data_root = _DATA_ROOT
-        drafts_dir = data_root / "tenants" / tenant_id / "drafts"
+        tenants_root = (data_root / "tenants").resolve()
+        drafts_dir = (data_root / "tenants" / tenant_id / "drafts").resolve()
+        try:
+            drafts_dir.relative_to(tenants_root)
+        except ValueError:
+            raise ToolValidationError(
+                "tenant_id no permitido: ruta fuera del espacio de datos del tenant"
+            )
         drafts_dir.mkdir(parents=True, exist_ok=True)
         draft_id = f"drf_{uuid.uuid4().hex[:10]}"
         draft = {

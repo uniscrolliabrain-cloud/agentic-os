@@ -94,26 +94,10 @@ def _classify_with_llm(
 )
 def run_inbox_watcher(
     runner: Any,
-    *args,
-    **kwargs,
+    tenant_id: str,
+    params: Optional[Dict[str, Any]] = None,
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-
-    # Compatibilidad con la invocación legacy (runner, registry, tenant_id)
-    # usada por los tests de FASE 6, y con la canónica del PipelineRunner
-    # (runner, tenant_id, params, correlation_id).
-    if len(args) == 2 and hasattr(args[0], "get"):
-        tenant_id = args[1]
-        params = {}
-        correlation_id = None
-    elif len(args) >= 1:
-        tenant_id = args[0]
-        params = args[1] if len(args) > 1 else kwargs.get("params") or {}
-        correlation_id = args[2] if len(args) > 2 else kwargs.get("correlation_id")
-    else:
-        tenant_id = kwargs.get("tenant_id", "system")
-        params = kwargs.get("params") or {}
-        correlation_id = kwargs.get("correlation_id")
-
     params = params or {}
 
     emails_result = runner.tool(

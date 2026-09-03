@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from threading import RLock
 from typing import Any, Dict, List, Optional
 
 from ...kernel.types.ids import new_id
@@ -34,27 +36,34 @@ class TenantRegistry:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._tenants: Dict[str, Tenant] = {}  # key: id
         self._slug_index: Dict[str, str] = {}  # slug -> id
+        self._lock = RLock()
         self._initialized = True
         self._load()
 
     def _load(self) -> None:
-        if not self.path.exists():
-            self._save()
-            return
-        try:
-            with open(self.path, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            for item in raw:
-                t = Tenant(**item)
-                self._tenants[t.id] = t
-                self._slug_index[t.slug] = t.id
-        except Exception:
-            self._tenants = {}
-            self._slug_index = {}
+        with self._lock:
+            if not self.path.exists():
+                self._save()
+                return
+            try:
+                with open(self.path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                for item in raw:
+                    t = Tenant(**item)
+                    self._tenants[t.id] = t
+                    self._slug_index[t.slug] = t.id
+            except Exception:
+                self._tenants = {}
+                self._slug_index = {}
 
     def _save(self) -> None:
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump([t.model_dump(mode="json") for t in self._tenants.values()], f, ensure_ascii=False, indent=2)
+        with self._lock:
+            # Escritura atómica: fichero temporal + os.replace para que un
+            # fallo a mitad de escritura nunca corrompa registry.json.
+            tmp = self.path.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump([t.model_dump(mode="json") for t in self._tenants.values()], f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.path)
 
     # --- API usada por rest.py ---
 
@@ -94,9 +103,16 @@ class TenantRegistry:
         return t
 
     def get(self, identifier: str) -> Optional[Tenant]:
-        if identifier in self._slug_index:
-            identifier = self._slug_index[identifier]
-        return self._tenants.get(identifier)
+        if not isinstance(identifier, str) or not identifier:
+            return None
+        try:
+            needle = validate_slug(identifier)
+        except ValueError:
+            # Identidad malformada o con path traversal no puede resolver a un tenant.
+            return None
+        if needle in self._slug_index:
+            needle = self._slug_index[needle]
+        return self._tenants.get(needle)
 
     def update(self, tenant: Tenant) -> Tenant:
         self._tenants[tenant.id] = tenant

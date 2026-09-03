@@ -41,21 +41,8 @@ def _parse_leads(content: str, name: str) -> List[Dict[str, Any]]:
 
 
 @register("leads_to_draft", tools=["drive_list_files", "drive_read_file", "gmail_create_draft"])
-def run_leads_to_draft(runner: Any, *args, **kwargs) -> Dict[str, Any]:
-    if len(args) == 2 and hasattr(args[0], "get"):
-        registry = args[0]
-        tenant_id = args[1]
-        params = kwargs.get("params") or {}
-        correlation_id = kwargs.get("correlation_id")
-    elif len(args) >= 1:
-        tenant_id = args[0]
-        params = args[1] if len(args) > 1 else kwargs.get("params") or {}
-        correlation_id = args[2] if len(args) > 2 else kwargs.get("correlation_id")
-    else:
-        tenant_id = kwargs.get("tenant_id", "system")
-        params = kwargs.get("params") or {}
-        correlation_id = kwargs.get("correlation_id")
-
+def run_leads_to_draft(runner: Any, tenant_id: str, params: Optional[Dict[str, Any]] = None,
+                       correlation_id: Optional[str] = None) -> Dict[str, Any]:
     params = params or {}
     folder = f"leads/{tenant_id}"
     listing = runner.tool("drive_list_files",

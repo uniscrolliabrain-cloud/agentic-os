@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from pathlib import Path
 from typing import Dict
 
 from ..core.config import CredentialSet
+
+logger = logging.getLogger(__name__)
 
 
 def _cred_path(workspace: str, provider: str, base: Path | None = None) -> Path:
@@ -25,6 +28,10 @@ def _cred_path(workspace: str, provider: str, base: Path | None = None) -> Path:
 
 class EncodedFileCredentialStore:
     """Codificación base64 de credenciales en disco — NO es encriptación.
+
+    ⚠️ ADVERTENCIA: base64 NO protege las credenciales. Cualquiera con acceso
+    al fichero puede decodificarlo. Esto es SOLO un almacenamiento transitorio
+    para desarrollo.
 
     TODO(security): para producción reemplazar por un secret manager real
     (HashiCorp Vault, AWS KMS, GCP Secret Manager) con rotación y auditoría.
@@ -57,6 +64,24 @@ class CredentialStore:
 
         self.cred_dir = Path(cred_dir or os.environ.get("CONNECTOR_CRED_DIR") or ".credentials")
         self.cred_dir.mkdir(parents=True, exist_ok=True)
+        # Mejor esfuerzo (Unix): restrictivo, no world-readable.
+        try:
+            self.cred_dir.chmod(0o700)
+        except OSError:
+            pass
+
+        # Advertencia si el directorio de credenciales vive dentro del repo:
+        # riesgo de commit accidental y acceso por el código.
+        repo_root = Path(__file__).resolve().parents[4]
+        try:
+            self.cred_dir.resolve().relative_to(repo_root.resolve())
+            logger.warning(
+                "CONNECTOR_CRED_DIR (%s) está dentro del repositorio. "
+                "Conecta un secret manager o usa un directorio fuera del código.",
+                self.cred_dir,
+            )
+        except ValueError:
+            pass
 
     def save(self, workspace: str, provider: str, credential_set: CredentialSet) -> None:
         path = _cred_path(workspace, provider, self.cred_dir)
@@ -70,6 +95,11 @@ class CredentialStore:
         }
         with open(path, "w") as f:
             json.dump(data, f)
+        # Mejor esfuerzo (Unix): el fichero no debe ser legible por otros usuarios.
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
 
     def load(self, workspace: str, provider: str) -> "CredentialSet | None":
         path = _cred_path(workspace, provider, self.cred_dir)

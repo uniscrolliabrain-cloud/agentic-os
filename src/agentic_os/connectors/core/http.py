@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import re
 import time
 import uuid
@@ -67,22 +68,126 @@ class HttpClient:
 
     @staticmethod
     def _is_ssrf(url: str) -> bool:
+        """Protección SSRF fail-closed.
+
+        Bloquea los rangos de red privados/loopback/link-local/multicast/
+        unspecified y las representaciones alternas de IP (decimal, octal, hex)
+        que algunos clientes resuelven aunque `urlparse` no las normalice.
+        Si la URL no se puede validar -> se bloquea.
+        """
         try:
             parsed = urlparse(url)
         except Exception:
             return True
-        host = parsed.hostname or ""
-        if host in {"localhost", "127.0.0.1", "::1"}:
+        host = parsed.hostname
+        if host is None:
             return True
-        if host.startswith("10.") or host.startswith("192.168."):
+
+        lowered = host.strip("[]").lower()
+
+        # 1) IPv4/IPv6 directa: descartar según propiedades del address.
+        try:
+            addr = ipaddress.ip_address(lowered)
+        except ValueError:
+            addr = None
+
+        if addr is not None:
+            return (
+                addr.is_loopback
+                or addr.is_link_local
+                or addr.is_multicast
+                or addr.is_private
+                or addr.is_unspecified
+                or addr.is_reserved
+            )
+
+        # 2) IPv6 no parseable (zona, malformado) -> fail-closed.
+        if ":" in lowered:
             return True
-        if host.startswith("172."):
+
+        # 3) Nombres de host locales.
+        if lowered in {"localhost", "localtest.me", "0"}:
+            return True
+        if lowered.endswith(".localhost"):
+            return True
+
+        # 4) Representaciones alternas de IP (decimal/octal/hex, octetos mixtos).
+        if HttpClient._is_alt_ip(lowered):
+            return True
+
+        return False
+
+    @staticmethod
+    def _is_alt_ip(host: str) -> bool:
+        """Detecta IPs en notación decimal entera, octal, hex u octetos mixtos."""
+
+        # Entero sin puntos en decimal: "2130706433" -> 127.0.0.1
+        if re.fullmatch(r"[0-9]{1,10}", host):
             try:
-                second = int(host.split(".")[1])
-            except (IndexError, ValueError):
-                return True
-            if 16 <= second <= 31:
-                return True
+                addr = ipaddress.ip_address(int(host))
+            except ValueError:
+                return False
+            return (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_link_local
+                or addr.is_unspecified
+            )
+
+        # Entero hex: "0x7f000001"
+        if re.fullmatch(r"0[xX][0-9a-fA-F]{1,8}", host):
+            try:
+                addr = ipaddress.ip_address(int(host, 16))
+            except ValueError:
+                return False
+            return (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_link_local
+                or addr.is_unspecified
+            )
+
+        # Entero octal: "017700000001"
+        if re.fullmatch(r"0[0-7]{1,11}", host):
+            try:
+                addr = ipaddress.ip_address(int(host, 8))
+            except ValueError:
+                return False
+            return (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_link_local
+                or addr.is_unspecified
+            )
+
+        # IPv4 con octetos alternos: "0177.0.0.1", "0x7f.0.0.1", "127.1"
+        parts = host.split(".")
+        if 2 <= len(parts) <= 4:
+            octets = []
+            try:
+                for part in parts:
+                    if not part:
+                        raise ValueError
+                    if part.startswith("0x") or part.startswith("0X"):
+                        octets.append(int(part, 16))
+                    elif part.startswith("0") and len(part) > 1:
+                        octets.append(int(part, 8))
+                    else:
+                        octets.append(int(part, 10))
+            except (ValueError, TypeError):
+                return False
+            if all(0 <= o <= 255 for o in octets):
+                try:
+                    addr = ipaddress.ip_address(bytes(octets))
+                except ValueError:
+                    return False
+                return (
+                    addr.is_private
+                    or addr.is_loopback
+                    or addr.is_link_local
+                    or addr.is_unspecified
+                )
+
         return False
 
     async def request(
