@@ -57,12 +57,15 @@ class HttpClient:
         self._client: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self.timeout,
-            http2=False,
-            headers={"X-Correlation-Id": self.correlation_id},
-        )
+        kwargs: Dict[str, Any] = {
+            "timeout": self.timeout,
+            "http2": False,
+            "headers": {"X-Correlation-Id": self.correlation_id},
+        }
+        if self.base_url is not None:
+            kwargs["base_url"] = self.base_url
+
+        self._client = httpx.AsyncClient(**kwargs)
         return self
 
     async def __aexit__(self, *exc):
