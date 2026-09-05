@@ -1,0 +1,31 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\Alfonso\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Alfonso\Desktop\git hub repos\agentic-os
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collecting ... collected 51 items
+
+tests/connectors/test_connector_kernel.py::test_catalogo_completo_registrado PASSED [  1%]
+tests/connectors/test_connector_kernel.py::test_todos_los_connectors_nacen_sin_conectar PASSED [  3%]
+tests/connectors/test_connector_kernel.py::test_capabilities_cubren_familias_del_sop PASSED [  5%]
+tests/connectors/test_connector_kernel.py::test_spec_coherente_por_provider PASSED [  7%]
+tests/connectors/test_connector_kernel.py::test_registry_resuelve_multi_provider PASSED [  9%]
+tests/connectors/test_connector_kernel.py::test_health_check_stubs_auth_required PASSED [ 11%]
+tests/connectors/test_connector_kernel.py::test_get_provider_capabilities PASSED [ 13%]
+tests/connectors/test_connector_routing.py::test_stub_devuelve_not_configured PASSED [ 15%]
+tests/connectors/test_connector_routing.py::test_capability_desconocida_da_unsupported PASSED [ 17%]
+tests/connectors/test_connector_routing.py::test_dry_run_devuelve_preview_sin_efecto PASSED [ 19%]
+tests/connectors/test_connector_routing.py::test_risk_class_classification PASSED [ 21%]
+tests/connectors/test_connector_routing.py::test_resultado_nunca_contiene_secretos PASSED [ 23%]
+tests/connectors/test_connector_routing.py::test_command_es_inmutable PASSED [ 25%]
+tests/connectors/test_documentation_tool.py::test_create_sin_title_lanza_error PASSED [ 27%]
+tests/connectors/test_documentation_tool.py::test_create_valido_devuelve_resultado_simulado PASSED [ 29%]
+tests/connectors/test_documentation_tool.py::test_search_devuelve_resultados PASSED [ 31%]
+tests/connectors/test_drive_path_safety.py::test_safe_subfolder_accepted PASSED [ 33%]
+tests/connectors/test_drive_path_safety.py::test_tenant_root_evil_sibling_rejected PASSED [ 35%]
+tests/connectors/test_drive_path_safety.py::test_traversal_to_other_tenant_rejected PASSED [ 37%]
+tests/connectors/test_drive_path_safety.py::test_drive_list_files_rejects_traversal PASSED [ 39%]
+tests/connectors/test_drive_path_safety.py::test_drive_read_file_rejects_traversal_and_allows_legit PASSED [ 41%]
+tests/connectors/test_google_adapters.py::TestGoogleGmailAdapter::test_list_messages_success PASSED [ 43%]
+tests/connectors/test_google_adapters.py::TestGoogleGmailAdapter::test_list_messages_empty 

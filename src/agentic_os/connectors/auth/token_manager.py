@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from ..core.config import CredentialSet
+from ...kernel.types.time import now_utc
 
 
 class TokenManager:
@@ -12,7 +13,7 @@ class TokenManager:
     def is_expired(expires_at: datetime | None) -> bool:
         if not expires_at:
             return False
-        return datetime.now(timezone.utc) >= expires_at.replace(tzinfo=timezone.utc)
+        return now_utc() >= expires_at.replace(tzinfo=datetime.now().astimezone().tzinfo)
 
     @staticmethod
     def refresh_if_needed(
@@ -35,7 +36,7 @@ class TokenManager:
                 expires_in = refreshed.get("expires_in", 3600)
                 from datetime import timedelta
 
-                credential_set.expires_at = datetime.now(timezone.utc) + timedelta(
+                credential_set.expires_at = now_utc() + timedelta(
                     seconds=expires_in
                 )
         return credential_set

@@ -1,0 +1,81 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\Alfonso\Desktop\git hub repos\agentic-os
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collected 51 items
+
+<Dir agentic-os>
+  <Dir tests>
+    <Package connectors>
+      <Module test_connector_kernel.py>
+        <Function test_catalogo_completo_registrado>
+        <Function test_todos_los_connectors_nacen_sin_conectar>
+        <Function test_capabilities_cubren_familias_del_sop>
+        <Function test_spec_coherente_por_provider>
+        <Function test_registry_resuelve_multi_provider>
+        <Function test_health_check_stubs_auth_required>
+        <Function test_get_provider_capabilities>
+      <Module test_connector_routing.py>
+        <Function test_stub_devuelve_not_configured>
+        <Function test_capability_desconocida_da_unsupported>
+        <Function test_dry_run_devuelve_preview_sin_efecto>
+        <Function test_risk_class_classification>
+        <Function test_resultado_nunca_contiene_secretos>
+        <Function test_command_es_inmutable>
+      <Module test_documentation_tool.py>
+        <Function test_create_sin_title_lanza_error>
+        <Function test_create_valido_devuelve_resultado_simulado>
+        <Function test_search_devuelve_resultados>
+      <Module test_drive_path_safety.py>
+        <Function test_safe_subfolder_accepted>
+        <Function test_tenant_root_evil_sibling_rejected>
+        <Function test_traversal_to_other_tenant_rejected>
+        <Function test_drive_list_files_rejects_traversal>
+        <Function test_drive_read_file_rejects_traversal_and_allows_legit>
+      <Module test_google_adapters.py>
+        <Class TestGoogleGmailAdapter>
+          <Function test_list_messages_success>
+          <Function test_list_messages_empty>
+          <Function test_get_message_full>
+          <Function test_send_message_success>
+          <Function test_auth_error_401>
+          <Function test_not_found_404>
+        <Class TestGoogleDriveAdapter>
+          <Function test_list_files_success>
+          <Function test_list_files_with_folder>
+          <Function test_read_file_text>
+          <Function test_create_file_success>
+          <Function test_search_files>
+          <Function test_auth_error_403>
+        <Class TestGoogleCalendarAdapter>
+          <Function test_create_event_success>
+          <Function test_create_event_with_attendees>
+          <Function test_list_events_success>
+          <Function test_list_events_uses_now_utc_default>
+          <Function test_provider_error_400>
+        <Class TestGoogleAuth>
+          <Function test_access_token_valid_not_refreshed>
+          <Function test_access_token_expired_triggers_refresh>
+          <Function test_missing_credentials_raises>
+          <Function test_refresh_invalid_response_raises>
+      <Module test_unified_execution.py>
+        <Function test_gmail_send_resolves_via_connector_kernel>
+        <Function test_all_mock_actions_with_kernel_capability_use_bridge>
+        <Function test_bridge_capability_is_canonical>
+        <Function test_unknown_action_still_fails_cleanly>
+        <Function test_dry_run_returns_preview_without_side_effect>
+      <Module test_webhook_event.py>
+        <Function test_webhook_event_basic_fields>
+        <Function test_webhook_event_is_real_pydantic_model>
+        <Function test_webhook_event_is_frozen>
+        <Function test_webhook_event_payload_default_is_independent>
+
+============================== warnings summary ===============================
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\config\__init__.py:1464
+  C:\Users\Alfonso\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\config\__init__.py:1464: PytestConfigWarning: Unknown config option: asyncio_mode
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 51 tests collected in 4.64s =========================

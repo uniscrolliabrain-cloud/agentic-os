@@ -1,13 +1,14 @@
 """Adapter real de Google Calendar API v3."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from ..core.errors import AuthenticationError, NotFoundError, ProviderError
 from .google_auth import GoogleAuth
+from ...kernel.types.time import now_utc
 
 BASE_URL = "https://www.googleapis.com/calendar/v3"
 
@@ -58,7 +59,7 @@ class GoogleCalendarAdapter:
     def list_events(self, max_results: int = 10, time_min: Optional[str] = None) -> List[Dict[str, Any]]:
         """Lista eventos próximos del calendario primario."""
         if time_min is None:
-            time_min = datetime.now(timezone.utc).isoformat()
+            time_min = now_utc().isoformat()
         params = {"timeMin": time_min, "maxResults": min(max_results, 100), "singleEvents": "true", "orderBy": "startTime"}
         data = self._request("GET", "/calendars/primary/events", params=params)
         return [
