@@ -39,6 +39,10 @@ CANONICAL_ALIASES: Dict[str, str] = {
     "web_search": "web.search",
     "documentation_create": "knowledge.page.create",
     "documentation_search": "knowledge.page.search",
+    "drive_list_files": "file.read",
+    "drive_read_file": "file.read",
+    "drive_search": "file.read",
+    "drive_create_file": "file.create",
 }
 
 
