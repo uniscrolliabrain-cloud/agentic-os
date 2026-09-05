@@ -65,17 +65,19 @@ class Orchestrator:
         self,
         pipeline_id: str,
         tenant_id: str,
-        executor=None,
+        executor,
         registry=None,
         correlation_id=None,
         command_id=None,
         params=None,
     ):
-        """FASE 6: ejecuta un pipeline programado con TenantContext obligatorio.
+        """Ejecuta un pipeline del catálogo vía PipelineRunner -> Executor.
 
-        El trigger (scheduler/API) llama a este método; el pipeline se resuelve
-        del catálogo y se ejecuta SIEMPRE via PipelineRunner -> Executor ->
-        Policy -> Tool -> EventLog (auditando PipelineStarted/Completed/Failed).
+        El Executor es obligatorio y se inyecta de forma explícita. El
+        orquestador no construye un Executor interno ni ejecuta tools o
+        connectors: cualquier efecto externo pasa por el Executor inyectado.
+        `registry` se conserva por compatibilidad de call sites; la fuente
+        de tools es `executor.registry`.
         """
         from .pipelines import PIPELINES
 
@@ -94,11 +96,14 @@ class Orchestrator:
             return {"status": "UNKNOWN_PIPELINE", "pipeline_id": pipeline_id}
 
         if executor is None:
-            from ..execution.executor import Executor
+            raise TypeError(
+                "handle_pipeline requiere un Executor inyectado; "
+                "no se admite construcción interna ni ejecución directa"
+            )
 
-            executor = Executor(
-                registry=registry or self._default_registry(),
-                event_log=self.log,
+        if registry is not None and registry is not executor.registry:
+            raise ValueError(
+                "registry inyectado debe ser el mismo objeto que executor.registry"
             )
 
         from .pipelines.runner import PipelineRunner
@@ -114,9 +119,3 @@ class Orchestrator:
             correlation_id=correlation_id,
             command_id=command_id,
         )
-
-    def _default_registry(self):
-        """Registry por defecto (mocks + bridge) para pipelines sin registry propio."""
-        from ..execution.tools import build_default_registry
-
-        return build_default_registry()

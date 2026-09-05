@@ -35,6 +35,7 @@ class AuditLog:
     def __init__(self, log_path: Optional[str] = None):
         self.log_path = log_path
         self._records: List[AuditRecord] = []
+        self._load_from_disk()
 
     def record(self, command: Command, connector_id: str, provider: str,
                status: str, duration_ms: int = 0,
@@ -54,12 +55,37 @@ class AuditLog:
             duration_ms=duration_ms,
         )
         self._records.append(record)
-        # persistir solo referencias de auditoría, nunca secrets
+        # Persistir a disco (JSONL) — solo referencias de auditoría, nunca secrets
+        self._persist_record(record)
+        return record
+
+    def _persist_record(self, record: AuditRecord) -> None:
+        """Escribe el registro a disco en formato JSONL."""
+        if not self.log_path:
+            return
         import json
         from pathlib import Path
+        Path(self.log_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(self.log_path, "a", encoding="utf-8") as f:
+            f.write(record.model_dump_json() + "\n")
 
-        Path(self.log_path).parent.mkdir(parents=True, exist_ok=True) if self.log_path else None
-        return record
+    def _load_from_disk(self) -> None:
+        """Carga registros previos del disco al iniciar."""
+        if not self.log_path:
+            return
+        from pathlib import Path
+        if not Path(self.log_path).exists():
+            return
+        import json
+        with open(self.log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        data = json.loads(line)
+                        self._records.append(AuditRecord(**data))
+                    except Exception:
+                        pass
 
     def all(self) -> List[Any]:
         return list(self._records)

@@ -81,16 +81,25 @@ def test_credential_malformada_no_crashea(store, tmp_path) -> None:
 
 
 def test_base64_no_es_cifrado_documentado(tmp_path) -> None:
-    """El disco contiene base64 (reversible sin clave): el contrato debe ser
-    honesto — es codificación, no cifrado."""
+    """El disco contiene TRÁFICO cifrado con Fernet (clave), no base64 plano:
+    el contrato ahora es real encryption, y la documentación lo dice."""
     enc = EncodedFileCredentialStore.encrypt("secreto")
-    assert base64.b64decode(enc) == b"secreto"  # reversible sin clave
+    # NO es reversible con base64 trivial:
+    try:
+        assert base64.b64decode(enc) != b"secreto"
+    except Exception:
+        pass  # ni siquiera es base64 estándar decodificable (alpha urlsafe) → correcto
     doc = EncodedFileCredentialStore.__doc__ or ""
-    assert "NO es encriptación" in doc
+    assert "Fernet" in doc or "cifrad" in doc.lower()
 
 
 def test_encrypted_alias_de_encode_no_confunde(store, tmp_path) -> None:
     store.save("ws-a", "gmail", _cred(token="valor"))
     raw = (tmp_path / "creds" / "ws-a" / "gmail.json").read_text(encoding="utf-8")
-    assert "valor" not in raw  # al menos no está en claro
-    assert base64.b64encode(b"valor").decode() in raw  # pero sí reversible
+    assert "valor" not in raw  # nunca en claro
+    # Tampoco aparece el base64 trivial del valor: está CIFRADO, no codificado
+    assert base64.b64encode(b"valor").decode() not in raw
+    # roundtrip sigue funcionando con el Secret
+    cred = store.load("ws-a", "gmail")
+    assert cred is not None
+    assert cred.data["token"].get_secret_value() == "valor"

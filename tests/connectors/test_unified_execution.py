@@ -35,9 +35,15 @@ def _bare_executor() -> Executor:
     return Executor(registry=build_default_registry(), policy_engine=PolicyEngine(policy=allow_policy))
 
 
-def test_gmail_send_resolves_via_connector_kernel():
+def test_gmail_send_resolves_via_connector_kernel(monkeypatch):
     """gmail_send existe en el kernel (email.message.send) y en el mock:
-    debe ganar el ConnectorRouter -> CONNECTOR_NOT_CONFIGURED (stub sin conectar)."""
+    debe ganar el ConnectorRouter -> CONNECTOR_NOT_CONFIGURED (stub sin conectar).
+
+    Fijamos google_real=False para probar el camino stub de forma determinista
+    (independiente del .env local, que puede tener GOOGLE_REAL=1)."""
+    from agentic_os.infrastructure.config.settings import settings
+
+    monkeypatch.setattr(settings, "google_real", False)
     executor = _bare_executor()
     result = executor.execute(
         action="gmail_send",
@@ -81,8 +87,14 @@ def test_unknown_action_still_fails_cleanly():
     assert "no encontrada" in result["error"]
 
 
-def test_dry_run_returns_preview_without_side_effect():
-    """dry_run a través del puente: preview del kernel, nunca ejecución."""
+def test_dry_run_returns_preview_without_side_effect(monkeypatch):
+    """dry_run a través del puente: preview del kernel, nunca ejecución.
+
+    Fijamos google_real=False: el preview del dry_run es contrato del STUB;
+    el conector real se prueba en tests/test_google_real_routing.py."""
+    from agentic_os.infrastructure.config.settings import settings
+
+    monkeypatch.setattr(settings, "google_real", False)
     executor = _bare_executor()
     result = executor.execute(
         action="gmail_send",

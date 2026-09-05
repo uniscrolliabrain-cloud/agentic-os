@@ -17,6 +17,7 @@ class OAuthManager:
     def authorization_url(oauth_config: Dict[str, Any], state: Optional[str] = None) -> str:
         state = state or uuid.uuid4().hex
         _ = state
+        from urllib.parse import urlencode
         params = {
             "client_id": oauth_config["client_id"],
             "redirect_uri": oauth_config["redirect_uri"],
@@ -25,8 +26,15 @@ class OAuthManager:
             "state": state,
             "access_type": oauth_config.get("access_type", "offline"),
         }
-        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        from urllib.parse import quote
+        qs = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
         return f"{oauth_config['authorization_url']}?{qs}"
+
+    @staticmethod
+    def validate_state(expected_state: str, received_state: str) -> bool:
+        """Valida que el state recibido coincida con el enviado (protección CSRF)."""
+        import hmac
+        return hmac.compare_digest(expected_state, received_state)
 
     @staticmethod
     def exchange_code(oauth_config: Dict[str, Any], code: str) -> Optional[Dict[str, Any]]:

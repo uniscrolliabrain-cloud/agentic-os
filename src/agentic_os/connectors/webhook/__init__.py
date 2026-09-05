@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..core.models import CommandResult
+from ...kernel.types.time import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class WebhookEvent(BaseModel):
     event_type: str
     payload: dict[str, Any] = Field(default_factory=dict)
     received_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=now_utc,
     )
     workspace_id: Optional[str] = None
 

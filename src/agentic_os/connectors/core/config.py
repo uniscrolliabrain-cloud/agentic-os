@@ -20,8 +20,8 @@ class RetryPolicy(BaseModel):
 
 
 class RateLimitPolicy(BaseModel):
-    requests_per_minute: int = 60
-    requests_per_second: Optional[float] = None
+    requests_per_minute: Optional[int] = None
+    requests_per_second: Optional[int] = None
     daily_quota: Optional[int] = None
     burst_size: int = 1
 

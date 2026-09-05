@@ -37,6 +37,7 @@ class TenantRegistry:
         self._tenants: Dict[str, Tenant] = {}  # key: id
         self._slug_index: Dict[str, str] = {}  # slug -> id
         self._lock = RLock()
+        self._last_mtime: Optional[int] = None
         self._initialized = True
         self._load()
 
@@ -44,17 +45,76 @@ class TenantRegistry:
         with self._lock:
             if not self.path.exists():
                 self._save()
+                self._last_mtime = self.path.stat().st_mtime_ns if self.path.exists() else None
                 return
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     raw = json.load(f)
+                new_tenants: Dict[str, Tenant] = {}
+                new_slug: Dict[str, str] = {}
                 for item in raw:
                     t = Tenant(**item)
-                    self._tenants[t.id] = t
-                    self._slug_index[t.slug] = t.id
+                    new_tenants[t.id] = t
+                    new_slug[t.slug] = t.id
+                self._tenants = new_tenants
+                self._slug_index = new_slug
+                self._last_mtime = self.path.stat().st_mtime_ns
+            except Exception as e:
+                # NO wipe: mantener tenants en memoria, loguear el error
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    "Error cargando registry.json (posible corrupción): %s. "
+                    "Manteniendo %d tenants en memoria.",
+                    e, len(self._tenants),
+                )
+                # Escribir backup del archivo corrupto para diagnóstico
+                try:
+                    if self.path.exists():
+                        backup = self.path.with_suffix(".json.corrupt.bak")
+                        self.path.replace(backup)
+                        logger.info("Backup de archivo corrupto guardado en: %s", backup)
+                except Exception:
+                    pass
+
+    def _maybe_reload(self) -> None:
+        """Recarga desde disco si el fichero cambió (multi-worker safe).
+
+        Cada worker mantiene su copia en memoria; al detectar un mtime distinto
+        (escritura de otro worker) se sincroniza con la fuente de verdad en
+        disco antes de resolver lecturas.
+        """
+        try:
+            if not self.path.exists():
+                return
+            current = self.path.stat().st_mtime_ns
+        except OSError:
+            return
+        if current == self._last_mtime:
+            return
+        with self._lock:
+            # Re-chequear dentro del lock (doble-check)
+            try:
+                current = self.path.stat().st_mtime_ns
+            except OSError:
+                return
+            if current == self._last_mtime:
+                return
+            try:
+                with open(self.path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                new_tenants: Dict[str, Tenant] = {}
+                new_slug: Dict[str, str] = {}
+                for item in raw:
+                    t = Tenant(**item)
+                    new_tenants[t.id] = t
+                    new_slug[t.slug] = t.id
+                self._tenants = new_tenants
+                self._slug_index = new_slug
+                self._last_mtime = current
             except Exception:
-                self._tenants = {}
-                self._slug_index = {}
+                # Corrupción transitoria: mantener estado en memoria, sin wipe.
+                return
 
     def _save(self) -> None:
         with self._lock:
@@ -64,13 +124,19 @@ class TenantRegistry:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump([t.model_dump(mode="json") for t in self._tenants.values()], f, ensure_ascii=False, indent=2)
             os.replace(tmp, self.path)
+            try:
+                self._last_mtime = self.path.stat().st_mtime_ns
+            except OSError:
+                self._last_mtime = None
 
     # --- API usada por rest.py ---
 
     def list_all(self) -> List[Tenant]:
+        self._maybe_reload()
         return list(self._tenants.values())
 
     def create(self, name: str, slug: str, config: Optional[Dict[str, Any]] = None) -> Tenant:
+        self._maybe_reload()
         slug = validate_slug(slug)
         if slug in self._slug_index:
             raise ValueError(f"Ya existe un tenant con slug '{slug}'")
@@ -103,6 +169,7 @@ class TenantRegistry:
         return t
 
     def get(self, identifier: str) -> Optional[Tenant]:
+        self._maybe_reload()
         if not isinstance(identifier, str) or not identifier:
             return None
         try:
@@ -115,12 +182,14 @@ class TenantRegistry:
         return self._tenants.get(needle)
 
     def update(self, tenant: Tenant) -> Tenant:
+        self._maybe_reload()
         self._tenants[tenant.id] = tenant
         self._slug_index[tenant.slug] = tenant.id
         self._save()
         return tenant
 
     def delete(self, identifier: str) -> bool:
+        self._maybe_reload()
         t = self.get(identifier)
         if t is None:
             return False

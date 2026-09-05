@@ -34,13 +34,14 @@ class RateLimiter:
             now = time.time()
             if policy.requests_per_second:
                 window = 1.0 / policy.requests_per_second
-                self._trim(self._counters[key], now - 1.0, window)
+                self._trim(self._counters[key], now - window)
+                if len(self._counters[key]) >= policy.requests_per_second:
+                    return False
             else:
                 window = 60.0
                 self._trim(self._counters[key], now - 60.0)
-
-            if len(self._counters[key]) >= policy.requests_per_minute:
-                return False
+                if len(self._counters[key]) >= policy.requests_per_minute:
+                    return False
             self._counters[key].append(now)
 
             # daily quota

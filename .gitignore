@@ -19,7 +19,11 @@ venv.bak/
 # ---------- Environment / secrets ----------
 .env
 .env.*
+.env*
 !.env.example
+.credentials/
+*.pem
+*.key
 
 # Streamlit secrets — NEVER commit API keys
 .streamlit/secrets.toml
@@ -62,9 +66,16 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
-# ---------- Runtime data ----------
+# ---------- Temporary artifacts ----------
+_probe_im.py
+MASTER_PLAN.MD
+tests/MASTER_PLAN.MD
+estrategia_consolidada.md
+ontology_prompt_final.md
+ontology_prompt_finalv2.md
 data/
 
 # ---------- Local runtime logs ----------
 *.log
 *.err.log
+.aider*

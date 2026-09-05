@@ -20,8 +20,6 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = Field(default=None, alias="GROQ_API_KEY")
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     groq_chat_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_CHAT_MODEL")
-    # También acepta mayúsculas por compatibilidad
-    GROQ_API_KEY: Optional[str] = Field(default=None, alias="GROQ_API_KEY")
     
     # --- FASE 0: persistencia (multi-tenant) ---
     eventlog_impl: str = Field(default="jsonl", alias="EVENTLOG_IMPL")
@@ -36,6 +34,10 @@ class Settings(BaseSettings):
     google_client_secret: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
     google_refresh_token: Optional[str] = Field(default=None, alias="GOOGLE_REFRESH_TOKEN")
     google_redirect_uri: Optional[str] = Field(default=None, alias="GOOGLE_REDIRECT_URI")
+    # GOOGLE_REAL=true → el CapabilityRegistry registra el GoogleConnector REAL
+    # (Gmail/Drive/Calendar vía adapters) en vez del StubConnector. Default False
+    # = safe: sin el flag explícito, Google sigue en stub (patrón DEV_ALLOW_ALL).
+    google_real: bool = Field(default=False, alias="GOOGLE_REAL")
     microsoft_client_id: Optional[str] = Field(default=None, alias="MICROSOFT_CLIENT_ID")
     microsoft_client_secret: Optional[str] = Field(default=None, alias="MICROSOFT_CLIENT_SECRET")
     microsoft_refresh_token: Optional[str] = Field(default=None, alias="MICROSOFT_REFRESH_TOKEN")
@@ -94,5 +96,6 @@ class Settings(BaseSettings):
     jira_token: Optional[str] = Field(default=None, alias="JIRA_TOKEN")
     jira_email: Optional[str] = Field(default=None, alias="JIRA_EMAIL")
     connector_cred_dir: Optional[str] = Field(default="./data/creds", alias="CONNECTOR_CRED_DIR")
+    credential_encryption_key: Optional[str] = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY")
 
 settings = Settings()

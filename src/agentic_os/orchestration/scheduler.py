@@ -178,22 +178,21 @@ class Scheduler:
             f"cmd-{uuid.uuid4().hex}"
         )
 
-        self._emit(
-            "ScheduledPipelineStarted",
-            tenant_id,
-            pipeline_id,
-            {
-                "schedule_id": schedule_id,
-                "pipeline_id": pipeline_id,
-            },
-            correlation_id,
-            command_id,
-        )
-
-        if self.on_trigger is None:
-            return
-
         try:
+            self._emit(
+                "ScheduledPipelineStarted",
+                tenant_id,
+                pipeline_id,
+                {
+                    "schedule_id": schedule_id,
+                    "pipeline_id": pipeline_id,
+                },
+                correlation_id,
+                command_id,
+            )
+
+            if self.on_trigger is None:
+                return
 
             self.on_trigger(
                 pipeline_id,
@@ -208,17 +207,20 @@ class Scheduler:
                 "Scheduled pipeline failed"
             )
 
-            self._emit(
-                "ScheduledPipelineFailed",
-                tenant_id,
-                pipeline_id,
-                {
-                    "schedule_id": schedule_id,
-                    "error": str(error)[:300],
-                },
-                correlation_id,
-                command_id,
-            )
+            try:
+                self._emit(
+                    "ScheduledPipelineFailed",
+                    tenant_id,
+                    pipeline_id,
+                    {
+                        "schedule_id": schedule_id,
+                        "error": str(error)[:300],
+                    },
+                    correlation_id,
+                    command_id,
+                )
+            except Exception:
+                pass  # Si no puede auditar, al menos queda logueado
 
     def schedule_daily(
         self,

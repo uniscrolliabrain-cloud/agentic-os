@@ -74,6 +74,19 @@ def tenant_scope(
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
 
+    # 0. Credenciales del tenant expiradas → denegar (fail-closed).
+    #    Aplica a cualquier vía de acceso (api key o admin): un tenant con
+    #    credenciales vencidas no debe seguir operando.
+    _expires_at = tenant.config.credentials_expires_at
+    if _expires_at is not None:
+        _now = now_utc()
+        _expires_at_utc = _expires_at if _expires_at.tzinfo else _expires_at.replace(tzinfo=_now.tzinfo)
+        if _now > _expires_at_utc:
+            raise HTTPException(
+                status_code=401,
+                detail="Credenciales del tenant expiradas: contacta al administrador",
+            )
+
     # 1. Admin bypass si coincide X-Admin-Key con settings.admin_api_key
     if settings.admin_api_key and (x_admin_key == settings.admin_api_key or x_api_key == settings.admin_api_key):
         return tenant.id
@@ -359,11 +372,8 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                     tenant_id=tenant_id,
                 )
             )
-            if conversation_id:
-                try:
-                    _append_message_to_conversation(conversation_id, "assistant", f"⚙️ (back office) {summary} ✅", tenant_id)
-                except HTTPException:
-                    pass
+            # Back-office NO inyecta en la conversación del usuario.
+            # Solo audita en EventLog (más arriba) para no romper la voz de Laia.
             with _tasks_lock:
                 _background_tasks[task_id].update(status="completed", summary=summary, ended_at=now_utc().isoformat())
         except Exception as e:
@@ -376,11 +386,8 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                     tenant_id=tenant_id,
                 )
             )
-            if conversation_id:
-                try:
-                    _append_message_to_conversation(conversation_id, "assistant", f"⚠️ (back office) error: {e}", tenant_id)
-                except HTTPException:
-                    pass
+            # Back-office NO inyecta en la conversación del usuario.
+            # Solo audita en EventLog (más arriba) para no romper la voz de Laia.
             with _tasks_lock:
                 _background_tasks[task_id].update(status="failed", summary=str(e), ended_at=now_utc().isoformat())
     threading.Thread(target=_run, daemon=True).start()

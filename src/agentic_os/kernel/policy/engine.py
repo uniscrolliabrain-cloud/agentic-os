@@ -125,8 +125,9 @@ class PolicyEngine:
             tenant = self._tenant(tenant_id)
 
             if tenant is None:
-                # Tenant no registrado: con DEV_ALLOW_ALL=true, permite
-                # (tests con tenants efímeros). Sin él, deny.
+                # Tenant no registrado: con DEV_ALLOW_ALL=true (dev) se permite
+                # (tenants efímeros de tests). Con false (default, producción)
+                # siempre deny. DEV_ALLOW_ALL es el ÚNICO gate; ENV=dev no abre.
                 if _dev_allow_all():
                     return Decision(
                         effect="allow",

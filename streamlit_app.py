@@ -99,10 +99,18 @@ if prompt:
         st.markdown(reply)
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
-    # 3. Orquestador (Velocidad 2): tarea asíncrona en segundo plano
+    # 3. Orquestador (Velocidad 2): tarea asincrona en segundo plano
+    # NOTA: Streamlit NO permite modificar session_state desde hilos secundarios.
+    # El orquestador se ejecuta en background con una instancia local (no session_state).
     def _run_background_orchestrator(p: str, tid: str):
         try:
-            st.session_state.orchestrator.handle_user_message(p, tenant_id=tid)
+            from agentic_os.orchestration.orchestrator import Orchestrator
+            from agentic_os.interfaces.llm.provider import GeminiProvider
+            from agentic_os.infrastructure.persistence import get_eventlog_repo
+            llm = GeminiProvider(api_key=GEMINI_API_KEY, model=settings.gemini_model)
+            local_log = get_eventlog_repo()
+            orch = Orchestrator(log=local_log, llm=llm)
+            orch.handle_user_message(p, tenant_id=tid)
         except Exception:
             pass
 

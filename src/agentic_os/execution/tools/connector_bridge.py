@@ -16,10 +16,13 @@ el resultado normalizado.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from typing import Any, Dict
 
 from .base import Tool
+
+logger = logging.getLogger(__name__)
 
 # Alias acción del orquestador/mock -> capability canónica del Connector Kernel.
 # Si el catálogo declara la capability, gana SIEMPRE el kernel.
@@ -115,12 +118,44 @@ class ConnectorBridgeTool(Tool):
         )
 
 
+def _build_google_connector():
+    """Intenta construir el GoogleConnector REAL si el flag y las credenciales
+    están presentes. Devuelve None si no procede (→ stub como siempre).
+
+    Gate doble: GOOGLE_REAL=true Y GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN en
+    Settings. Sin flag no se intenta nada (default producción-seguro).
+    """
+    from ...infrastructure.config.settings import settings
+
+    if not getattr(settings, "google_real", False):
+        return None
+    if not (
+        settings.google_client_id
+        and settings.google_client_secret
+        and settings.google_refresh_token
+    ):
+        return None
+    try:
+        from ...connectors.google import GoogleConnector
+
+        conn = GoogleConnector()
+        return conn if conn.connected else None
+    except Exception:  # noqa: BLE001 — cualquier fallo de construcción → stub
+        logger.exception("No se pudo construir GoogleConnector real; se usa stub")
+        return None
+
+
 def build_capability_registry():
     """Construye el CapabilityRegistry desde el catálogo de providers.
 
     Fuente de verdad de qué capabilities existen. Todos los connectors se
     crean SIN conectar (connected=False): la ejecución real devuelve
     CONNECTOR_NOT_CONFIGURED hasta que se configuren credenciales.
+
+    Excepción: si GOOGLE_REAL=true y hay credenciales, Google registra el
+    GoogleConnector real (Gmail/Drive/Calendar); las caps del spec que el
+    adapter real no cubre (video/analytics) quedan en un stub residual con
+    connector_id distinto ('google-extra') porque el registry reemplaza por id.
     """
     from ...connectors.factory import ConnectorFactory
     from ...connectors.providers import PROVIDER_SPECS, register_builtin_providers
@@ -130,8 +165,21 @@ def build_capability_registry():
     register_builtin_providers(factory)
     registry = CapabilityRegistry()
     for provider_id in PROVIDER_SPECS:
-        if factory.supports(provider_id):
-            registry.register(factory.create(provider_id))
+        if not factory.supports(provider_id):
+            continue
+        if provider_id == "google":
+            real = _build_google_connector()
+            if real is not None:
+                registry.register(real)
+                spec_caps = PROVIDER_SPECS["google"]["caps"]
+                extra = [c for c in spec_caps if c not in set(real.capabilities)]
+                if extra:
+                    residual = factory.create("google")
+                    residual.connector_id = "google-extra"
+                    residual.capabilities = extra
+                    registry.register(residual)
+                continue
+        registry.register(factory.create(provider_id))
     return registry
 
 

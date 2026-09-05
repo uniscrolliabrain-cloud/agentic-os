@@ -29,6 +29,9 @@ class TenantConfig(BaseModel):
     # Credenciales de integraciones (OAuth tokens, API keys...) — almacenadas aparte en producción
     credentials: Dict[str, Any] = Field(default_factory=dict)
 
+    # Expiración de credenciales (ISO format) — si está presente, las keys expiradas se rechazan
+    credentials_expires_at: Optional[datetime] = None
+
 
 import re
 from pydantic import BaseModel, ConfigDict, Field, field_validator

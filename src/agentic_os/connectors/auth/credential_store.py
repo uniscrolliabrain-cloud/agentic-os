@@ -1,14 +1,64 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..core.config import CredentialSet
 
 logger = logging.getLogger(__name__)
+
+# Clave Fernet usada durante la sesión cuando no hay CREDENTIAL_ENCRYPTION_KEY.
+# Se genera una vez por proceso: permite cifrar/descifrar en runtime pero NO
+# persiste las credenciales entre reinicios sin clave configurada.
+_module_fernet = None
+
+
+def _fernet() -> "Fernet":
+    """Devuelve una instancia Fernet estable para el proceso.
+
+    Fuentes de clave, en orden de preferencia:
+      1. settings.credential_encryption_key  (CREDENTIAL_ENCRYPTION_KEY)
+      2. os.environ CREDENTIAL_ENCRYPTION_KEY
+      3. clave aleatoria por proceso (solo dev; advertimos en logs)
+
+    Si la clave dada no es una clave Fernet válida (32 bytes base64 u-safe),
+    se deriva una estable vía SHA-256 para que valores legibles sirvan.
+    """
+    global _module_fernet
+    if _module_fernet is not None:
+        return _module_fernet
+
+    from cryptography.fernet import Fernet
+
+    raw_key: Optional[str] = None
+    try:
+        from ...infrastructure.config.settings import settings
+        raw_key = getattr(settings, "credential_encryption_key", None)
+    except Exception:
+        raw_key = None
+    if not raw_key:
+        import os
+        raw_key = os.environ.get("CREDENTIAL_ENCRYPTION_KEY")
+
+    if raw_key:
+        try:
+            _module_fernet = Fernet(raw_key.encode())
+            return _module_fernet
+        except Exception:
+            digest = hashlib.sha256(raw_key.encode()).digest()
+            _module_fernet = Fernet(base64.urlsafe_b64encode(digest))
+            return _module_fernet
+
+    _module_fernet = Fernet(Fernet.generate_key())
+    logger.warning(
+        "CREDENTIAL_ENCRYPTION_KEY no configurada: usando clave cifrado por proceso. "
+        "Las credenciales NO descifrarán tras un reinicio. Configúrala en .env para producción."
+    )
+    return _module_fernet
 
 
 def _secret_value(value: Any) -> str:
@@ -23,41 +73,40 @@ def _secret_value(value: Any) -> str:
     return str(value)
 
 
-
 def _cred_path(workspace: str, provider: str, base: Path | None = None) -> Path:
-    """Resuelve la ruta del fichero de credenciales.
-
-    Usa SIEMPRE el `base` de la instancia CredentialStore cuando se aporta,
-    para que un CredentialStore(cred_dir=...) no ignore su propio directorio
-    releyendo la variable de entorno.
-    """
+    """Resuelve la ruta del fichero de credenciales."""
     if base is not None:
         return Path(base) / workspace / f"{provider}.json"
     import os
-
     fallback = os.environ.get("CONNECTOR_CRED_DIR") or ".credentials"
     return Path(fallback) / workspace / f"{provider}.json"
 
 
 class EncodedFileCredentialStore:
-    """Codificación base64 de credenciales en disco — NO es encriptación.
+    """Credenciales cifradas en disco con Fernet (AES-128-CBC + HMAC).
 
-    ⚠️ ADVERTENCIA: base64 NO protege las credenciales. Cualquiera con acceso
-    al fichero puede decodificarlo. Esto es SOLO un almacenamiento transitorio
-    para desarrollo.
+    ⚠️ CREDENTIAL_ENCRYPTION_KEY es obligatoria para persistencia real entre
+    reinicios. Sin ella se usa una clave por proceso (válida solo en runtime).
 
-    TODO(security): para producción reemplazar por un secret manager real
-    (HashiCorp Vault, AWS KMS, GCP Secret Manager) con rotación y auditoría.
+    Descifra de forma retrocompatible el formato base64 antiguo.
     """
-
-    # TODO(security): migrar a Vault/KMS antes de conectar providers reales.
 
     @staticmethod
     def encrypt(value: str) -> str:
-        return base64.b64encode(value.encode()).decode()
+        if not value:
+            return value
+        return _fernet().encrypt(value.encode()).decode()
 
     @staticmethod
     def decrypt(value: str) -> str:
+        if not value:
+            return ""
+        # 1) Intentar descifrado Fernet (formato actual)
+        try:
+            return _fernet().decrypt(value.encode()).decode()
+        except Exception:
+            pass
+        # 2) Retrocompatibilidad: el fichero puede venir de la versión base64.
         try:
             return base64.b64decode(value.encode()).decode()
         except Exception:

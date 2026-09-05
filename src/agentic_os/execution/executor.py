@@ -117,6 +117,9 @@ class Executor:
             if isinstance(tenant, dict):
                 return tenant.get("id")
 
+            if isinstance(tenant, str):
+                return tenant
+
             return getattr(
                 tenant,
                 "id",
@@ -258,7 +261,7 @@ class Executor:
 
         # ---------------------------------------------- TOOL
 
-        tool = self.registry.get(action)
+        tool = self.registry.get_optional(action)
 
         if tool is None:
 
