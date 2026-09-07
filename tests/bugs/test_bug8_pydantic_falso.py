@@ -1,59 +1,139 @@
-"""Bug 8 - Pydantic falso en WorldState y Entity: Dict genéricos permiten age="gato" """
+"""Bug 8 - Pydantic falso en WorldState: AHORA CORREGIDO con A6.
+
+WorldState.entities es Dict[str, EntityUnion] (Union discriminada por kind).
+Estos tests afirman el comportamiento CORREGIDO:
+- Payloads invalidos son rechazados con ValidationError.
+- Entidades validas se almacenan tipadas (instancias de su clase).
+- Kinds no registrados son rechazados.
+"""
 
 import pytest
 from pydantic import ValidationError
 
 from agentic_os.kernel.world.state import WorldState
+from agentic_os.kernel.world.applier import apply, InvalidEntityEventError
+from agentic_os.kernel.world.events import Event, EventLog
+from agentic_os.kernel.ontology.domain_models import Lead, Proposal
 
 
-def test_worldstate_rejects_invalid_entity_types():
-    """WorldState no debe aceptar entidades con tipos inválidos (age='gato')."""
-    # Si WorldState tiene validación de entidades, debe rechazar tipos incorrectos
-    # Por ahora, el bug es que Dict[str, Any] acepta cualquier cosa
+def _lead_payload(entity_id: str = "person_1") -> dict:
+    return {
+        "kind": "marketing.lead",
+        "id": entity_id,
+        "tenant_id": "test-tenant",
+        "name": "Juan",
+        "email": "juan@test.com",
+    }
+
+
+def test_worldstate_rejects_invalid_entity_payloads():
+    """WorldState ya NO acepta dicts sueltos: age='gato' y similares fallan."""
+    with pytest.raises(ValidationError):
+        WorldState(entities={"person_1": {"name": "Juan", "age": "gato"}})
+
+
+def test_worldstate_accepts_valid_typed_entities():
+    """Entidades validas se almacenan como instancias tipadas."""
+    state = WorldState(entities={"person_1": Lead(**_lead_payload())})
+    entity = state.entities["person_1"]
+    assert isinstance(entity, Lead)
+    assert entity.name == "Juan"
+    assert entity.kind == "marketing.lead"
+
+
+def test_worldstate_rejects_unknown_kind():
+    """Un kind no registrado en ENTITY_TYPE_REGISTRY es rechazado."""
+    with pytest.raises(ValidationError):
+        WorldState(
+            entities={"person_1": {"kind": "tipo.inexistente", "tenant_id": "t1"}}
+        )
+
+
+def test_worldstate_entities_are_typed_union():
+    """La anotacion de entities ya no es Dict[str, Any]."""
+    annotation = WorldState.model_fields["entities"].annotation
+    type_str = str(annotation)
+    assert "Lead" in type_str and "typing.Any" not in type_str, (
+        f"WorldState.entities debe ser Union de entidades tipadas, no {type_str}"
+    )
+
+
+def test_worldstate_rejects_non_dict_entities():
+    with pytest.raises(ValidationError):
+        WorldState(entities="not_a_dict")
+
+
+def test_apply_rejects_invalid_payload_transactionally():
+    """apply() con payload invalido lanza y NO modifica el estado original."""
+    log = EventLog()
+    log.append(
+        Event(
+            kind="entity_created",
+            entity_id="prop_1",
+            tenant_id="test-tenant",
+            payload={
+                "kind": "marketing.proposal",
+                "id": "prop_1",
+                "lead_id": "lead_1",
+                "amount": 100.0,
+            },
+        )
+    )
     state = WorldState()
-    # Crear una entidad con tipos incorrectos
-    state.entities["person_1"] = {"name": "Juan", "age": "gato"}
-    # Esto NO debería ser válido: age debe ser int, no str
-    # El bug es que Pydantic lo acepta sin quejarse
-    assert isinstance(state.entities["person_1"]["age"], str), \
-        "WorldState acepta age='gato' sin validación (Pydantic falso)"
+    state = apply(state, log.all_events()[0])
+    assert isinstance(state.entities["prop_1"], Proposal)
+
+    # Evento corrupto: amount no puede ser negativo
+    bad = Event(
+        kind="entity_updated",
+        entity_id="prop_1",
+        tenant_id="test-tenant",
+        payload={"amount": -5.0},
+    )
+    with pytest.raises(ValidationError):
+        apply(state, bad)
+    # Semantica transaccional: el estado original queda intacto
+    assert state.entities["prop_1"].amount == 100.0
+    assert state.version == 1
 
 
-def test_worldstate_accepts_valid_entities():
-    """WorldState debe aceptar entidades con tipos correctos."""
-    state = WorldState()
-    state.entities["person_1"] = {"name": "Juan", "age": 30}
-    assert state.entities["person_1"]["age"] == 30
-
-
-def test_worldstate_entities_have_schema():
-    """WorldState debe tener validación en runtime (field_validators) aunque el tipo sea Dict[str, Any]."""
-    import inspect
-    source = inspect.getsource(WorldState)
-    # Debe tener field_validator para validar en runtime
-    assert "field_validator" in source, \
-        "WorldState necesita field_validators para validar tipos en runtime"
-    # Debe validar que entities/relations sean dicts
-    from pydantic import ValidationError
-    try:
-        WorldState(entities="not_a_dict", relations={}, version=0)
-        assert False, "WorldState acepta entities no-dict sin validar"
-    except ValidationError:
-        pass  # Esperado: validación rechaza no-dict
-
-
-def test_entity_payload_validates_types():
-    """Los payloads de eventos deben validar tipos de datos."""
-    from agentic_os.kernel.world.events import Event
-    from agentic_os.kernel.types.time import now_utc
-    # Un evento con payload que tiene tipos incorrectos debería ser rechazado
-    # o al menos el payload debe tener validación
+def test_apply_rejects_entity_created_without_kind():
     event = Event(
         kind="entity_created",
-        entity_id="person_1",
+        entity_id="e1",
         tenant_id="test-tenant",
-        payload={"name": "Juan", "age": "gato"},
+        payload={"name": "sin kind"},
     )
-    # El bug: el payload acepta cualquier cosa
-    assert event.payload["age"] == "gato", \
-        "Event.payload acepta age='gato' sin validación"
+    with pytest.raises(InvalidEntityEventError):
+        apply(WorldState(), event)
+
+
+def test_apply_rejects_update_on_missing_entity():
+    event = Event(
+        kind="entity_updated",
+        entity_id="fantasma",
+        tenant_id="test-tenant",
+        payload={"status": "gone"},
+    )
+    with pytest.raises(InvalidEntityEventError):
+        apply(WorldState(), event)
+
+
+def test_apply_updates_entity_typed():
+    state = WorldState()
+    created = Event(
+        kind="entity_created",
+        entity_id="l1",
+        tenant_id="test-tenant",
+        payload={"kind": "marketing.lead", "name": "Ana", "email": "ana@x.com"},
+    )
+    state = apply(state, created)
+    updated = Event(
+        kind="entity_updated",
+        entity_id="l1",
+        tenant_id="test-tenant",
+        payload={"status": "qualified"},
+    )
+    state2 = apply(state, updated)
+    assert state2.entities["l1"].status == "qualified"
+    assert state2.version == 2

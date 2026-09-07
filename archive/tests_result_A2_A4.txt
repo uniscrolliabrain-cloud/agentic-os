@@ -1,0 +1,23 @@
+============================= test session starts =============================
+collecting ... collected 18 items
+
+tests/domains/test_domain_entity.py::test_domain_entity_importable PASSED [  5%]
+tests/domains/test_domain_entity.py::test_domain_entity_requires_tenant_id PASSED [ 11%]
+tests/domains/test_domain_entity.py::test_domain_entity_requires_entity_type PASSED [ 16%]
+tests/domains/test_domain_entity.py::test_domain_entity_uses_now_utc PASSED [ 22%]
+tests/domains/test_domain_entity.py::test_domain_entity_is_frozen PASSED [ 27%]
+tests/domains/test_domain_entity.py::test_domain_entity_rejects_extra_fields PASSED [ 33%]
+tests/domains/test_domain_entity.py::test_domain_entity_rejects_negative_version PASSED [ 38%]
+tests/domains/test_domain_entity.py::test_lead_creates_with_valid_data PASSED [ 44%]
+tests/domains/test_domain_entity.py::test_lead_rejects_invalid_email PASSED [ 50%]
+tests/domains/test_domain_entity.py::test_proposal_rejects_empty_lead_id PASSED [ 55%]
+tests/domains/test_domain_entity.py::test_proposal_rejects_negative_amount PASSED [ 61%]
+tests/domains/test_domain_entity.py::test_campaign_rejects_empty_brand_id PASSED [ 66%]
+tests/domains/test_domain_entity.py::test_brand_allows_optional_website PASSED [ 72%]
+tests/domains/test_domain_entity.py::test_blogpost_rejects_empty_title PASSED [ 77%]
+tests/domains/test_domain_entity.py::test_coaching_client_rejects_invalid_email PASSED [ 83%]
+tests/domains/test_domain_entity.py::test_session_note_rejects_empty_client_id PASSED [ 88%]
+tests/domains/test_domain_entity.py::test_therapy_client_creates_with_kind PASSED [ 94%]
+tests/domains/test_domain_entity.py::test_appointment_rejects_empty_client_id PASSED [100%]
+
+============================= 18 passed in 0.37s ==============================
