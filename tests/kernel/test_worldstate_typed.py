@@ -42,16 +42,16 @@ def test_worldstate_all_nine_entities_accepted():
     from datetime import datetime, timezone
 
     fixtures = {
-        "l": Lead(tenant_id="t", name="A", email="a@t.com"),
-        "p": Proposal(tenant_id="t", lead_id="l", amount=10.0),
-        "b": Brand(tenant_id="t", name="Marca"),
-        "c": Campaign(tenant_id="t", name="Camp", brand_id="b", budget=100.0),
-        "bp": BlogPost(tenant_id="t", title="Hola", body="Contenido"),
-        "cc": CoachingClient(tenant_id="t", name="C", email="c@t.com"),
-        "sn": SessionNote(tenant_id="t", client_id="cc", content="x"),
-        "tc": TherapyClient(tenant_id="t", name="T"),
+        "l": Lead(id="l", tenant_id="t", name="A", email="a@t.com"),
+        "p": Proposal(id="p", tenant_id="t", lead_id="l", amount=10.0),
+        "b": Brand(id="b", tenant_id="t", name="Marca"),
+        "c": Campaign(id="c", tenant_id="t", name="Camp", brand_id="b", budget=100.0),
+        "bp": BlogPost(id="bp", tenant_id="t", title="Hola", body="Contenido"),
+        "cc": CoachingClient(id="cc", tenant_id="t", name="C", email="c@t.com"),
+        "sn": SessionNote(id="sn", tenant_id="t", client_id="cc", notes="x"),
+        "tc": TherapyClient(id="tc", tenant_id="t", name="T", specialty="psicologia"),
         "ap": Appointment(
-            tenant_id="t", client_id="tc", scheduled_at=datetime.now(timezone.utc)
+            id="ap", tenant_id="t", client_id="tc", scheduled_at=datetime.now(timezone.utc)
         ),
     }
     state = WorldState(entities=fixtures)

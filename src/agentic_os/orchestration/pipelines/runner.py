@@ -152,6 +152,41 @@ class PipelineRunner:
 
             raise
 
+    def emit_event(
+        self,
+        kind: str,
+        entity_id: str,
+        tenant_id: str,
+        payload: Dict[str, Any],
+        correlation_id: Optional[str] = None,
+        command_id: Optional[str] = None,
+    ) -> None:
+        """Emite un evento de dominio al EventLog (A9: entidades tipadas).
+
+        Mismo camino canónico que `_audit`: Event pydantic -> event_log del
+        Executor. Sin event_log es no-op (mismo contrato que _audit).
+        """
+        event_log = getattr(
+            self.executor,
+            "event_log",
+            None,
+        )
+
+        if event_log is None:
+            return
+
+        event_log.append(
+            Event(
+                kind=kind,
+                entity_id=entity_id,
+                tenant_id=tenant_id,
+                actor_id="pipeline_runner",
+                payload=payload,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+        )
+
     def _audit(
         self,
         kind: str,

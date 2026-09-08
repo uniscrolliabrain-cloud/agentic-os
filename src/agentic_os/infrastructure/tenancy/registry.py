@@ -120,6 +120,9 @@ class TenantRegistry:
         with self._lock:
             # Escritura atómica: fichero temporal + os.replace para que un
             # fallo a mitad de escritura nunca corrompa registry.json.
+            # El padre se asegura aquí (y no solo en __init__) porque el
+            # singleton puede sobrevivir a un tmp_path eliminado entre tests.
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".json.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump([t.model_dump(mode="json") for t in self._tenants.values()], f, ensure_ascii=False, indent=2)

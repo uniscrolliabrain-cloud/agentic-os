@@ -219,8 +219,14 @@ class Scheduler:
                     correlation_id,
                     command_id,
                 )
-            except Exception:
-                pass  # Si no puede auditar, al menos queda logueado
+            except Exception as audit_error:
+                # Fail-closed: si la auditoría del fallo no puede persistirse,
+                # el error NUNCA se traga; se propaga y queda observable
+                # (el job de APScheduler queda marcado como fallido).
+                logger.exception(
+                    "No se pudo persistir ScheduledPipelineFailed"
+                )
+                raise error from audit_error
 
     def schedule_daily(
         self,

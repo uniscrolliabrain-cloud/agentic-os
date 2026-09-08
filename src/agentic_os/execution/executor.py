@@ -311,45 +311,79 @@ class Executor:
                     "error": "tenant_id no puede ser sobreescrito",
                 }
 
-        self._audit(
-            "ActionStarted",
-            action,
-            tid,
-            {
-                "status": "started",
-                "params": self._params_summary(params),
-            },
-            actor,
-            correlation_id,
-            command_id,
-        )
-
         try:
-
-            run_params = dict(params)
-            if tid:
-                # El tenant autenticado se inyecta SIEMPRE: las tools nunca
-                # confían en un tenant_id libre aportado por el caller.
-                run_params["tenant_id"] = tid
-
-            output = tool.run(run_params)
-
             self._audit(
-                "ToolCompleted",
+                "ActionStarted",
                 action,
                 tid,
                 {
-                    "status": "ok",
-                    "output_keys": (
-                        sorted(output.keys())
-                        if isinstance(output, dict)
-                        else []
-                    ),
+                    "status": "started",
+                    "params": self._params_summary(params),
                 },
                 actor,
                 correlation_id,
                 command_id,
             )
+        except Exception as audit_err:
+            # Fail-closed: si la auditoría inicial no puede persistirse,
+            # la operación no puede considerarse exitosa.
+            return {
+                "success": False,
+                "error": f"audit failed: {_safe_error(audit_err)}",
+            }
+
+        try:
+            self._audit(
+                "ActionStarted",
+                action,
+                tid,
+                {
+                    "status": "started",
+                    "params": self._params_summary(params),
+                },
+                actor,
+                correlation_id,
+                command_id,
+            )
+        except Exception as audit_err:
+            # Fail-closed: si la auditoría inicial no puede persistirse,
+            # la operación no puede considerarse exitosa.
+            return {
+                "success": False,
+                "error": f"audit failed: {_safe_error(audit_err)}",
+            }
+
+        try:
+            run_params = dict(params or {})
+            if tid:
+                run_params["tenant_id"] = tid
+
+            output = tool.run(run_params)
+
+            try:
+                self._audit(
+                    "ToolCompleted",
+                    action,
+                    tid,
+                    {
+                        "status": "ok",
+                        "output_keys": (
+                            sorted(output.keys())
+                            if isinstance(output, dict)
+                            else []
+                        ),
+                    },
+                    actor,
+                    correlation_id,
+                    command_id,
+                )
+            except Exception as audit_err:
+                # Fail-closed: si la auditoría post-efecto no puede persistirse,
+                # la operación no puede declararse exitosa aunque la tool corrió.
+                return {
+                    "success": False,
+                    "error": f"audit failed: {_safe_error(audit_err)}",
+                }
 
             return {
                 "success": True,
@@ -377,6 +411,7 @@ class Executor:
                 "success": False,
                 "error": safe,
             }
+
 
     def execute_action(
         self,

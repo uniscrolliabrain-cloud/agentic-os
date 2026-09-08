@@ -221,7 +221,7 @@ class TestGoogleAuth:
             auth._lock = __import__("threading").Lock()
             auth._access_token = "old-token"
             auth._expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
-            with patch("agentic_os.connecters.adapters.google_auth.OAuthManager.refresh") as mock_refresh:
+            with patch("agentic_os.connectors.adapters.google_auth.OAuthManager.refresh") as mock_refresh:
                 mock_refresh.return_value = {"access_token": "new-token", "expires_in": 3600}
                 assert auth.access_token() == "new-token"
 
@@ -240,7 +240,7 @@ class TestGoogleAuth:
             auth._lock = __import__("threading").Lock()
             auth._access_token = None
             auth._expires_at = None
-            with patch("agentic_os.connecters.adapters.google_auth.OAuthManager.refresh") as mock_refresh:
+            with patch("agentic_os.connectors.adapters.google_auth.OAuthManager.refresh") as mock_refresh:
                 mock_refresh.return_value = {"error": "invalid_grant"}
                 with pytest.raises(AuthenticationError):
                     auth.access_token()

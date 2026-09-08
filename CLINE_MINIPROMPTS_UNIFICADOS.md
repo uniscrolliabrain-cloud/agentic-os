@@ -19,7 +19,7 @@ en vez de la referencia por línea.
 | Bloque | Estado real en el repo |
 |---|---|
 | **A1–A8** (entidades tipadas, WorldState, applier, replay) | ✅ **YA IMPLEMENTADO** en `kernel/ontology/domain_models.py`, `kernel/world/state.py`, `kernel/world/applier.py`, `kernel/world/replay.py`. Las 9 entidades, `ENTITY_TYPE_REGISTRY`, `EntityUnion` discriminado por `kind`, y el fail-closed de `apply()`/`replay()` existen y tienen tests (`tests/domains/test_domain_entity.py`, `tests/domains/test_entity_registry.py`, `tests/kernel/test_worldstate_typed.py`). **No los toques.** |
-| **A9** (migrar pipelines a entidades tipadas) | ❌ Pendiente. Los 3 pipelines (`pipeline_daily_social.py`, `pipeline_inbox_watcher.py`, `pipeline_leads_to_draft.py`) siguen escribiendo dicts sueltos a JSON en disco (`data/tenants/...`), no crean `Lead`/`Proposal`/`BlogPost` ni emiten eventos `entity_created` al EventLog. |
+| **A9** (migrar pipelines a entidades tipadas) | ✅ **YA IMPLEMENTADO** — `PipelineRunner.emit_event()` emite `entity_created` al EventLog. `pipeline_leads_to_draft.py` crea entidades `Lead` (fail-closed con ValidationError) y `pipeline_daily_social.py` crea `BlogPost` (fail-closed). Tests en `tests/automation/test_pipeline_leads_typed.py` (A9.1 + A9.2). **No los toques.** |
 | **A10** (gate) | Pendiente correr y pegar salida una vez cerrado A9. |
 | **Bloque F** (contratos Skill/Pipeline/MiniAgent) | ❌ No existe `src/agentic_os/contracts/` en el repo. Ni una clase. Empezar desde cero. |
 | **Bloque B** (SMC) | ❌ No existe `cognition/reasoning/smc.py`. Sí existe `cognition/reasoning/proposer.py` — revisar antes de crear el nuevo archivo por si hay que fusionar. |

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ...kernel.types.time import now_utc
+from ...kernel.ontology.domain_models import BlogPost
 from . import register
 
 _DATA_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "data"
@@ -65,6 +66,28 @@ def run_daily_social(runner: Any, tenant_id: str, params: Optional[Dict[str, Any
                 copy = generated.strip()
         except Exception:  # noqa: BLE001 - el copy fallback determinista nunca rompe
             pass
+
+    # A9.2: el copy publicado queda como entidad tipada BlogPost en el
+    # WorldState. Si no valida (titulo vacio, etc.) NO se publica (fail-closed)
+    # y se devuelve VALIDATION_ERROR con el detalle de Pydantic.
+    try:
+        entity = BlogPost(tenant_id=tenant_id, title=candidate.get("name", ""), body=copy)
+    except Exception as exc:  # noqa: BLE001 - se reporta tipado abajo
+        return {
+            "status": "VALIDATION_ERROR",
+            "tenant_id": tenant_id,
+            "error": str(exc),
+        }
+
+    emit = getattr(runner, "emit_event", None)
+    if callable(emit):
+        emit(
+            "entity_created",
+            entity.id,
+            tenant_id,
+            entity.model_dump(),
+            correlation_id,
+        )
 
     publish = runner.tool("meta_post_publish", {
         "page_id": params.get("page_id", f"page_{tenant_id}"),

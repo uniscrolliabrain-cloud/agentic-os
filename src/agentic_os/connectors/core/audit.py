@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -9,6 +10,8 @@ from pydantic import BaseModel, Field
 from ...kernel.types.time import now_utc
 
 from ..core.models import Command
+
+logger = logging.getLogger(__name__)
 
 
 class AuditRecord(BaseModel):
@@ -84,8 +87,14 @@ class AuditLog:
                     try:
                         data = json.loads(line)
                         self._records.append(AuditRecord(**data))
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        # Nunca se traga silenciosamente una línea corrupta:
+                        # la integridad de auditoría debe quedar observable.
+                        logger.warning(
+                            "AuditLog: línea corrupta ignorada -> %r: %s",
+                            line[:120],
+                            exc,
+                        )
 
     def all(self) -> List[Any]:
         return list(self._records)

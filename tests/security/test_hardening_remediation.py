@@ -31,7 +31,19 @@ def client_env(monkeypatch, tmp_path):
     (tmp_path / "conversations_legacy").mkdir(parents=True, exist_ok=True)
 
     # Crear tenant A con key y tenant B sin key (para probar el rechazo)
-    reg = rest_mod._tenant_registry
+    # Singleton fresco: tests/bugs resetea TenantRegistry._SHARED_INSTANCE,
+    # de modo que rest_mod._tenant_registry puede ser una instancia huerfana
+    # distinta de la que resuelve PolicyEngine._tenant(). Se crea una instancia
+    # nueva y se re-apunta el modulo rest para que ambos usen la misma.
+    from agentic_os.infrastructure.tenancy.registry import TenantRegistry as _TenantRegistry
+
+    _TenantRegistry._SHARED_INSTANCE = None
+    reg = _TenantRegistry()
+    monkeypatch.setattr(rest_mod, "_tenant_registry", reg)
+    # Congelar el auto-reload: otro test puede haber tocado registry.json y
+    # el reload pisaria los tenants inyectados en memoria (no persistidos).
+    monkeypatch.setattr(reg, "_maybe_reload", lambda: None)
+
     ta = Tenant(
         slug="tenant-a",
         config=TenantConfig(

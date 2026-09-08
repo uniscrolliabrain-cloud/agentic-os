@@ -22,6 +22,12 @@ def runner(monkeypatch, tmp_path: Path):
     """PipelineRunner con DEV_ALLOW_ALL (tenants efímeros de test) y datos en tmp_path."""
     monkeypatch.setenv("DEV_ALLOW_ALL", "true")
 
+    # Los tests NUNCA tocan la API real de Google: aunque .env traiga
+    # GOOGLE_REAL=true, aquí se fuerza el camino stub/mock determinista.
+    from agentic_os.infrastructure.config.settings import settings
+
+    monkeypatch.setattr(settings, "google_real", False)
+
     # Redirigir las raíces de datos de las tools hacia tmp_path para no ensuciar el repo
     import agentic_os.execution.tools.drive_tool as drive_mod
     import agentic_os.execution.tools.gmail_tool as gmail_mod
@@ -30,8 +36,17 @@ def runner(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(gmail_mod, "_DATA_ROOT", tmp_path)
 
     log = EventLog()
+    reg = build_default_registry()
+    # Con google_real=False, drive_* se resolvería por el Connector Kernel
+    # (stub sin credenciales -> CONNECTOR_NOT_CONFIGURED). Para este suite
+    # determinista offline, las tools de Drive usan el mock local apuntando
+    # a tmp_path (vía _DATA_ROOT parcheada arriba).
+    from agentic_os.execution.tools.drive_tool import DriveListFilesTool, DriveReadFileTool
+
+    reg.register(DriveListFilesTool())
+    reg.register(DriveReadFileTool())
     executor = Executor(
-        registry=build_default_registry(),
+        registry=reg,
         event_log=log,
     )
     return PipelineRunner(executor=executor, llm=None)

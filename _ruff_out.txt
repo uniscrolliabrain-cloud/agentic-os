@@ -1,0 +1,6 @@
+src\agentic_os\connectors\auth\credential_store.py:20:19: F821 Undefined name `Fernet`
+tests\bugs\test_bug3_credentialstore.py:92:12: F811 [*] Redefinition of unused `os` from line 5: `os` redefined here
+tests\test_google_real_routing.py:62:60: F821 Undefined name `start`
+tests\test_google_real_routing.py:62:74: F821 Undefined name `end`
+Found 4 errors.
+[*] 1 fixable with the `--fix` option.

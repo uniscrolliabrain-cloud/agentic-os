@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import register
+from ...kernel.ontology.domain_models import Lead
 
 _DATA_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
@@ -59,10 +60,31 @@ def run_leads_to_draft(runner: Any, tenant_id: str, params: Optional[Dict[str, A
     leads = _parse_leads(content, lead_file["name"])
 
     created = []
+    errors: List[str] = []
     llm = getattr(runner, "llm", None)
     for lead in leads:
         name = lead.get("name", "")
         email = lead.get("email", "")
+
+        # A9.1: cada lead valido queda como entidad tipada en el WorldState
+        # (entity_created al EventLog) antes de crear el borrador. Un lead
+        # que no valida NO genera draft (fail-closed) y se reporta en errors.
+        try:
+            entity = Lead(tenant_id=tenant_id, name=name, email=email)
+        except Exception as exc:  # noqa: BLE001 - ValidationError tipada abajo
+            errors.append(f"lead invalido (email={email!r}): {exc}")
+            continue
+
+        emit = getattr(runner, "emit_event", None)
+        if callable(emit):
+            emit(
+                "entity_created",
+                entity.id,
+                tenant_id,
+                entity.model_dump(),
+                correlation_id,
+            )
+
         subject = f"Hola {name}, tenemos una propuesta para ti" if name else "Propuesta para ti"
         body = (
             f"Hola {name},\n\nTe escribimos porque creemos que nuestra solución encaja "
@@ -83,4 +105,9 @@ def run_leads_to_draft(runner: Any, tenant_id: str, params: Optional[Dict[str, A
         }, tenant_id, correlation_id)
         created.append(draft)
 
-    return {"status": "OK", "tenant_id": tenant_id, "drafts_created": len(created)}
+    return {
+        "status": "OK",
+        "tenant_id": tenant_id,
+        "drafts_created": len(created),
+        "errors": errors,
+    }
