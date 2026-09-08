@@ -1,12 +1,23 @@
 from __future__ import annotations
 
-from .events import Event
+from .events import Event, EventPayload
 from .state import WorldState
 from ..ontology.domain_models import entity_from_payload
+
+_BASE_PAYLOAD_FIELDS = {"status", "error", "error_type", "params", "output_keys"}
 
 
 class InvalidEntityEventError(ValueError):
     """Evento de entidad invalido (fail-closed, nunca se ignora en silencio)."""
+
+
+def _payload_dict(payload: EventPayload) -> dict:
+    """Convierte el payload a dict con los campos de entidad (sin campos base)."""
+    data = payload.model_dump()
+    # Eliminar campos base de EventPayload que no son datos de entidad
+    for field in _BASE_PAYLOAD_FIELDS:
+        data.pop(field, None)
+    return data
 
 
 def apply(state: WorldState, event: Event) -> WorldState:
@@ -20,13 +31,13 @@ def apply(state: WorldState, event: Event) -> WorldState:
     new_entities = dict(state.entities)
     new_relations = dict(state.relations)
     if event.kind == "entity_created":
-        kind = event.payload.get("kind") or event.payload.get("entity_type")
+        kind = event.payload.kind or event.payload.entity_type
         if not kind:
             raise InvalidEntityEventError(
                 f"entity_created sin kind/entity_type registrado "
                 f"(entity_id={event.entity_id})"
             )
-        data = dict(event.payload)
+        data = _payload_dict(event.payload)
         # Normalizacion legitima: el evento declara identidad y tenant.
         data.setdefault("id", event.entity_id)
         data.setdefault("tenant_id", event.tenant_id)
@@ -45,13 +56,13 @@ def apply(state: WorldState, event: Event) -> WorldState:
                 f"'{event.entity_id}' (fail-closed)"
             )
         merged = existing.model_dump()
-        merged.update(event.payload)
+        merged.update(_payload_dict(event.payload))
         updated = type(existing)(**merged)
         new_entities[event.entity_id] = updated
     elif event.kind == "entity_deleted":
         new_entities.pop(event.entity_id, None)
     elif event.kind == "relation_created":
-        new_relations[event.entity_id] = event.payload
+        new_relations[event.entity_id] = _payload_dict(event.payload)
     elif event.kind == "relation_deleted":
         new_relations.pop(event.entity_id, None)
     return WorldState(

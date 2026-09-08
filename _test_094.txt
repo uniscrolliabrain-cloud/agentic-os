@@ -1,10 +1,14 @@
+STDOUT:
 ============================= test session starts =============================
 platform win32 -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\Alfonso\Desktop\git hub repos\agentic-os\.venv\Scripts\python.exe
 cachedir: .pytest_cache
-rootdir: C:\Users\Alfonso\Desktop\git hub repos\agentic-os
+rootdir: c:\Users\Alfonso\Desktop\git hub repos\agentic-os
 configfile: pyproject.toml
 plugins: anyio-4.14.2, asyncio-1.4.0, timeout-2.4.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
 collecting ... collected 7 items
 
 tests/orchestration/test_audit_fail_closed.py::test_eventlog_ok_ejecucion_normal PASSED [ 14%]
@@ -15,4 +19,8 @@ tests/orchestration/test_audit_fail_closed.py::test_scheduler_audita_fallo_de_pi
 tests/orchestration/test_audit_fail_closed.py::test_scheduler_no_se_traga_fallo_de_auditoria PASSED [ 85%]
 tests/orchestration/test_audit_fail_closed.py::test_auditlog_linea_corrupta_observable PASSED [100%]
 
-============================== 7 passed in 0.74s ==============================
+============================== 7 passed in 2.83s ==============================
+
+STDERR:
+
+RC: 0

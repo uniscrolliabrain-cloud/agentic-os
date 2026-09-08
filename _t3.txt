@@ -1,0 +1,637 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\Alfonso\Desktop\git hub repos\agentic-os
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 60.0s
+timeout method: thread
+timeout func_only: False
+collected 194 items
+
+tests\orchestration\test_audit_fail_closed.py .......                    [  3%]
+tests\orchestration\test_pipeline_execution_invariants.py ......         [  6%]
+tests\connectors\test_connector_kernel.py .......                        [ 10%]
+tests\connectors\test_connector_routing.py ......                        [ 13%]
+tests\connectors\test_documentation_tool.py ...                          [ 14%]
+tests\connectors\test_drive_path_safety.py .....                         [ 17%]
+tests\connectors\test_google_adapters.py .....................           [ 28%]
+tests\connectors\test_token_manager_clock.py .......                     [ 31%]
+tests\connectors\test_unified_execution.py .....                         [ 34%]
+tests\connectors\test_webhook_event.py ....                              [ 36%]
+tests\kernel\test_invariants.py F                                        [ 37%]
+tests\kernel\test_ontology_contracts.py .....................            [ 47%]
+tests\kernel\test_registry_memory_contracts.py .........                 [ 52%]
+tests\kernel\test_worldstate_typed.py .....FFF.                          [ 57%]
+tests\bugs\test_bug10_wipe_silencioso.py ...                             [ 58%]
+tests\bugs\test_bug11_scheduler_traga_excepciones.py ..F                 [ 60%]
+tests\bugs\test_bug12_executor_tenant_from_context.py .....              [ 62%]
+tests\bugs\test_bug13_auditlog_no_persiste.py ...                        [ 64%]
+tests\bugs\test_bug14_backoffice_inyectando_chat.py ...                  [ 65%]
+tests\bugs\test_bug15_reloj_no_canonico.py ...                           [ 67%]
+tests\bugs\test_bug16_streamlit_threading_race.py ..                     [ 68%]
+tests\bugs\test_bug17_falta_dependencias_tests.py ...                    [ 70%]
+tests\bugs\test_bug18_auth_tenant_debil.py ...                           [ 71%]
+tests\bugs\test_bug19_tenantregistry_singleton.py ...                    [ 73%]
+tests\bugs\test_bug1_ssrf.py .....                                       [ 75%]
+tests\bugs\test_bug20_toolregistry_falla_silencioso.py ......            [ 78%]
+tests\bugs\test_bug2_gitignore.py .....                                  [ 81%]
+tests\bugs\test_bug3_credentialstore.py .....                            [ 84%]
+tests\bugs\test_bug4_oauth_state.py ....                                 [ 86%]
+tests\bugs\test_bug5_devallowall.py .....                                [ 88%]
+tests\bugs\test_bug6_ratelimiter.py .....                                [ 91%]
+tests\bugs\test_bug7_webhooks_divergent.py ....                          [ 93%]
+tests\bugs\test_bug8_pydantic_falso.py .....FF.F                         [ 97%]
+tests\bugs\test_bug9_invariantes_comentarios.py ....                     [100%]
+
+================================== FAILURES ===================================
+__________________________ test_replay_deterministic __________________________
+
+log = EventLog(events=[Event(id='60dff01f-6177-47f9-945b-fa5b74397c31', kind='entity_created', entity_id='1', payload=EventP...15, 510148, tzinfo=datetime.timezone.utc), actor_id=None, tenant_id='tenant-a', correlation_id=None, command_id=None)])
+
+    def replay(log: Any) -> WorldState:
+        """Reconstruye el WorldState desde cualquier EventLogRepository.
+    
+        A8 (fail-closed): si un evento no puede aplicarse (payload invalido,
+        entidad no registrada, update sobre entidad inexistente), se lanza
+        CorruptEventError indicando el indice del evento ù nunca se devuelve
+        un WorldState parcial ni se omite el fallo silenciosamente.
+        """
+        state = WorldState()
+        for index, e in enumerate(log.all_events()):
+            try:
+>               state = apply(state, e)
+                        ^^^^^^^^^^^^^^^
+
+src\agentic_os\kernel\world\replay.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\agentic_os\kernel\world\applier.py:23: in apply
+    kind = event.payload.get("kind") or event.payload.get("entity_type")
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = EventPayload(status='unknown', error=None, error_type=None, params=None, output_keys=None, kind='marketing.lead', name='Ana', email='ana@test.com')
+item = 'get'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'EventPayload' object has no attribute 'get'
+
+.venv\Lib\site-packages\pydantic\main.py:1042: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+    def test_replay_deterministic():
+        log = EventLog()
+        log.append(
+            Event(
+                kind="entity_created",
+                entity_id="1",
+                tenant_id="tenant-a",
+                payload={
+                    "kind": "marketing.lead",
+                    "name": "Ana",
+                    "email": "ana@test.com",
+                },
+            )
+        )
+>       s1 = replay(log)
+             ^^^^^^^^^^^
+
+tests\kernel\test_invariants.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+log = EventLog(events=[Event(id='60dff01f-6177-47f9-945b-fa5b74397c31', kind='entity_created', entity_id='1', payload=EventP...15, 510148, tzinfo=datetime.timezone.utc), actor_id=None, tenant_id='tenant-a', correlation_id=None, command_id=None)])
+
+    def replay(log: Any) -> WorldState:
+        """Reconstruye el WorldState desde cualquier EventLogRepository.
+    
+        A8 (fail-closed): si un evento no puede aplicarse (payload invalido,
+        entidad no registrada, update sobre entidad inexistente), se lanza
+        CorruptEventError indicando el indice del evento ù nunca se devuelve
+        un WorldState parcial ni se omite el fallo silenciosamente.
+        """
+        state = WorldState()
+        for index, e in enumerate(log.all_events()):
+            try:
+                state = apply(state, e)
+            except Exception as exc:  # noqa: BLE001 - se relanza tipado abajo
+>               raise CorruptEventError(
+                    index=index, event_id=e.id, kind=e.kind, cause=exc
+                ) from exc
+E               agentic_os.kernel.world.replay.CorruptEventError: Evento corrupto en indice 0 (id=60dff01f-6177-47f9-945b-fa5b74397c31, kind=entity_created): 'EventPayload' object has no attribute 'get'
+
+src\agentic_os\kernel\world\replay.py:39: CorruptEventError
+_______________ test_replay_rebuilds_typed_state_from_clean_log _______________
+
+log = EventLog(events=[Event(id='72f2a7d3-cce1-4393-ac9c-5f0d0df00f52', kind='entity_created', entity_id='l1', payload=Event...7, 9, 16, 420900, tzinfo=datetime.timezone.utc), actor_id=None, tenant_id='t1', correlation_id=None, command_id=None)])
+
+    def replay(log: Any) -> WorldState:
+        """Reconstruye el WorldState desde cualquier EventLogRepository.
+    
+        A8 (fail-closed): si un evento no puede aplicarse (payload invalido,
+        entidad no registrada, update sobre entidad inexistente), se lanza
+        CorruptEventError indicando el indice del evento ù nunca se devuelve
+        un WorldState parcial ni se omite el fallo silenciosamente.
+        """
+        state = WorldState()
+        for index, e in enumerate(log.all_events()):
+            try:
+>               state = apply(state, e)
+                        ^^^^^^^^^^^^^^^
+
+src\agentic_os\kernel\world\replay.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\agentic_os\kernel\world\applier.py:23: in apply
+    kind = event.payload.get("kind") or event.payload.get("entity_type")
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = EventPayload(status='unknown', error=None, error_type=None, params=None, output_keys=None, kind='marketing.lead', name='Ana', email='ana@t.com')
+item = 'get'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'EventPayload' object has no attribute 'get'
+
+.venv\Lib\site-packages\pydantic\main.py:1042: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+    def test_replay_rebuilds_typed_state_from_clean_log():
+>       state = replay(_clean_log())
+                ^^^^^^^^^^^^^^^^^^^^
+
+tests\kernel\test_worldstate_typed.py:104: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+log = EventLog(events=[Event(id='72f2a7d3-cce1-4393-ac9c-5f0d0df00f52', kind='entity_created', entity_id='l1', payload=Event...7, 9, 16, 420900, tzinfo=datetime.timezone.utc), actor_id=None, tenant_id='t1', correlation_id=None, command_id=None)])
+
+    def replay(log: Any) -> WorldState:
+        """Reconstruye el WorldState desde cualquier EventLogRepository.
+    
+        A8 (fail-closed): si un evento no puede aplicarse (payload invalido,
+        entidad no registrada, update sobre entidad inexistente), se lanza
+        CorruptEventError indicando el indice del evento ù nunca se devuelve
+        un WorldState parcial ni se omite el fallo silenciosamente.
+        """
+        state = WorldState()
+        for index, e in enumerate(log.all_events()):
+            try:
+                state = apply(state, e)
+            except Exception as exc:  # noqa: BLE001 - se relanza tipado abajo
+>               raise CorruptEventError(
+                    index=index, event_id=e.id, kind=e.kind, cause=exc
+                ) from exc
+E               agentic_os.kernel.world.replay.CorruptEventError: Evento corrupto en indice 0 (id=72f2a7d3-cce1-4393-ac9c-5f0d0df00f52, kind=entity_created): 'EventPayload' object has no attribute 'get'
+
+src\agentic_os\kernel\world\replay.py:39: CorruptEventError
+_______________ test_replay_raises_with_index_of_corrupt_event ________________
+
+    def test_replay_raises_with_index_of_corrupt_event():
+        log = _clean_log()
+        # Evento corrupto en indice 2: payload invalido para su kind
+        log.append(
+            Event(
+                kind="entity_created",
+                entity_id="c1",
+                tenant_id="t1",
+                payload={"kind": "marketing.campaign", "budget": -1.0},
+            )
+        )
+        with pytest.raises(CorruptEventError) as exc_info:
+            replay(log)
+>       assert exc_info.value.index == 2
+E       assert 0 == 2
+E        +  where 0 = CorruptEventError("Evento corrupto en indice 0 (id=4181a8a6-bc0c-4d30-ad32-14318a024f7d, kind=entity_created): 'EventPayload' object has no attribute 'get'").index
+E        +    where CorruptEventError("Evento corrupto en indice 0 (id=4181a8a6-bc0c-4d30-ad32-14318a024f7d, kind=entity_created): 'EventPayload' object has no attribute 'get'") = <ExceptionInfo CorruptEventError("Evento corrupto en indice 0 (id=4181a8a6-bc0c-4d30-ad32-14318a024f7d, kind=entity_created): 'EventPayload' object has no attribute 'get'") tblen=2>.value
+
+tests\kernel\test_worldstate_typed.py:123: AssertionError
+___________________ test_replay_never_returns_partial_state ___________________
+
+    def test_replay_never_returns_partial_state():
+        """El estado previo al fallo NO se devuelve: replay o es limpio o falla."""
+        log = _clean_log()
+        log.append(
+            Event(
+                kind="entity_updated",
+                entity_id="inexistente",
+                tenant_id="t1",
+                payload={"status": "x"},
+            )
+        )
+        with pytest.raises(CorruptEventError) as exc_info:
+            replay(log)
+>       assert exc_info.value.index == 2
+E       assert 0 == 2
+E        +  where 0 = CorruptEventError("Evento corrupto en indice 0 (id=e5aebd72-07c4-4335-b783-fa70121e3773, kind=entity_created): 'EventPayload' object has no attribute 'get'").index
+E        +    where CorruptEventError("Evento corrupto en indice 0 (id=e5aebd72-07c4-4335-b783-fa70121e3773, kind=entity_created): 'EventPayload' object has no attribute 'get'") = <ExceptionInfo CorruptEventError("Evento corrupto en indice 0 (id=e5aebd72-07c4-4335-b783-fa70121e3773, kind=entity_created): 'EventPayload' object has no attribute 'get'") tblen=2>.value
+
+tests\kernel\test_worldstate_typed.py:140: AssertionError
+______________ test_scheduler_handles_fire_exception_gracefully _______________
+
+    def test_scheduler_handles_fire_exception_gracefully():
+        """Si _fire falla, el scheduler debe manejar la excepci¾n sin crash."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_log = MagicMock()
+            mock_log.append.side_effect = Exception("EventLog full")
+            scheduler = Scheduler(data_dir=tmpdir, event_log=mock_log)
+    
+            # No debe lanzar excepci¾n no manejada
+            try:
+>               scheduler._fire("tenant-1", "pipeline-1", "schedule-1")
+
+tests\bugs\test_bug11_scheduler_traga_excepciones.py:52: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\agentic_os\orchestration\scheduler.py:229: in _fire
+    raise error from audit_error
+src\agentic_os\orchestration\scheduler.py:211: in _fire
+    self._emit(
+src\agentic_os\orchestration\scheduler.py:151: in _emit
+    self.event_log.append(
+..\..\..\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1176: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1180: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1241: in _execute_mock_call
+    raise effect
+src\agentic_os\orchestration\scheduler.py:182: in _fire
+    self._emit(
+src\agentic_os\orchestration\scheduler.py:151: in _emit
+    self.event_log.append(
+..\..\..\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1176: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1180: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='mock.append' id='2994916541840'>
+args = (Event(id='6fae885b-bb90-4d90-89a4-14952191357f', kind='ScheduledPipelineStarted', entity_id='scheduler://pipeline-1',...enant-1', correlation_id='sched-5a4952d10c0d4b1eb8d09491814969a3', command_id='cmd-87b2008d5e884937918c7030968411b5'),)
+kwargs = {}
+
+    def _execute_mock_call(self, /, *args, **kwargs):
+        # separate from _increment_mock_call so that awaited functions are
+        # executed separately from their call, also AsyncMock overrides this method
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               Exception: EventLog full
+
+..\..\..\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1241: Exception
+
+During handling of the above exception, another exception occurred:
+
+    def test_scheduler_handles_fire_exception_gracefully():
+        """Si _fire falla, el scheduler debe manejar la excepci¾n sin crash."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_log = MagicMock()
+            mock_log.append.side_effect = Exception("EventLog full")
+            scheduler = Scheduler(data_dir=tmpdir, event_log=mock_log)
+    
+            # No debe lanzar excepci¾n no manejada
+            try:
+                scheduler._fire("tenant-1", "pipeline-1", "schedule-1")
+            except Exception:
+>               pytest.fail("Scheduler no debe lanzar excepciones no manejadas desde _fire")
+E               Failed: Scheduler no debe lanzar excepciones no manejadas desde _fire
+
+tests\bugs\test_bug11_scheduler_traga_excepciones.py:54: Failed
+------------------------------ Captured log call ------------------------------
+ERROR    agentic_os.orchestration.scheduler:scheduler.py:206 Scheduled pipeline failed
+Traceback (most recent call last):
+  File "C:\Users\Alfonso\Desktop\git hub repos\agentic-os\src\agentic_os\orchestration\scheduler.py", line 182, in _fire
+    self._emit(
+    ~~~~~~~~~~^
+        "ScheduledPipelineStarted",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+        command_id,
+        ^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Alfonso\Desktop\git hub repos\agentic-os\src\agentic_os\orchestration\scheduler.py", line 151, in _emit
+    self.event_log.append(
+    ~~~~~~~~~~~~~~~~~~~~~^
+        Event(
+        ^^^^^^
+    ...<10 lines>...
+        )
+        ^
+    )
+    ^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: EventLog full
+ERROR    agentic_os.orchestration.scheduler:scheduler.py:226 No se pudo persistir ScheduledPipelineFailed
+Traceback (most recent call last):
+  File "C:\Users\Alfonso\Desktop\git hub repos\agentic-os\src\agentic_os\orchestration\scheduler.py", line 211, in _fire
+    self._emit(
+    ~~~~~~~~~~^
+        "ScheduledPipelineFailed",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+        command_id,
+        ^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Alfonso\Desktop\git hub repos\agentic-os\src\agentic_os\orchestration\scheduler.py", line 151, in _emit
+    self.event_log.append(
+    ~~~~~~~~~~~~~~~~~~~~~^
+        Event(
+        ^^^^^^
+    ...<10 lines>...
+        )
+        ^
+    )
+    ^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1241, in _execute_mock_call
+    raise effect
+  File "C:\Users\Alfonso\Desktop\git hub repos\agentic-os\src\agentic_os\orchestration\scheduler.py", line 182, in _fire
+    self._emit(
+    ~~~~~~~~~~^
+        "ScheduledPipelineStarted",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+        command_id,
+        ^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Alfonso\Desktop\git hub repos\agentic-os\src\agentic_os\orchestration\scheduler.py", line 151, in _emit
+    self.event_log.append(
+    ~~~~~~~~~~~~~~~~~~~~~^
+        Event(
+        ^^^^^^
+    ...<10 lines>...
+        )
+        ^
+    )
+    ^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Alfonso\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py", line 1241, in _execute_mock_call
+    raise effect
+Exception: EventLog full
+_____________ test_apply_rejects_invalid_payload_transactionally ______________
+
+    def test_apply_rejects_invalid_payload_transactionally():
+        """apply() con payload invalido lanza y NO modifica el estado original."""
+        log = EventLog()
+        log.append(
+            Event(
+                kind="entity_created",
+                entity_id="prop_1",
+                tenant_id="test-tenant",
+                payload={
+                    "kind": "marketing.proposal",
+                    "id": "prop_1",
+                    "lead_id": "lead_1",
+                    "amount": 100.0,
+                },
+            )
+        )
+        state = WorldState()
+>       state = apply(state, log.all_events()[0])
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\bugs\test_bug8_pydantic_falso.py:83: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\agentic_os\kernel\world\applier.py:23: in apply
+    kind = event.payload.get("kind") or event.payload.get("entity_type")
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = EventPayload(status='unknown', error=None, error_type=None, params=None, output_keys=None, kind='marketing.proposal', id='prop_1', lead_id='lead_1', amount=100.0)
+item = 'get'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'EventPayload' object has no attribute 'get'
+
+.venv\Lib\site-packages\pydantic\main.py:1042: AttributeError
+_______________ test_apply_rejects_entity_created_without_kind ________________
+
+    def test_apply_rejects_entity_created_without_kind():
+        event = Event(
+            kind="entity_created",
+            entity_id="e1",
+            tenant_id="test-tenant",
+            payload={"name": "sin kind"},
+        )
+        with pytest.raises(InvalidEntityEventError):
+>           apply(WorldState(), event)
+
+tests\bugs\test_bug8_pydantic_falso.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\agentic_os\kernel\world\applier.py:23: in apply
+    kind = event.payload.get("kind") or event.payload.get("entity_type")
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = EventPayload(status='unknown', error=None, error_type=None, params=None, output_keys=None, name='sin kind')
+item = 'get'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'EventPayload' object has no attribute 'get'
+
+.venv\Lib\site-packages\pydantic\main.py:1042: AttributeError
+_______________________ test_apply_updates_entity_typed _______________________
+
+    def test_apply_updates_entity_typed():
+        state = WorldState()
+        created = Event(
+            kind="entity_created",
+            entity_id="l1",
+            tenant_id="test-tenant",
+            payload={"kind": "marketing.lead", "name": "Ana", "email": "ana@x.com"},
+        )
+>       state = apply(state, created)
+                ^^^^^^^^^^^^^^^^^^^^^
+
+tests\bugs\test_bug8_pydantic_falso.py:130: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\agentic_os\kernel\world\applier.py:23: in apply
+    kind = event.payload.get("kind") or event.payload.get("entity_type")
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = EventPayload(status='unknown', error=None, error_type=None, params=None, output_keys=None, kind='marketing.lead', name='Ana', email='ana@x.com')
+item = 'get'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'EventPayload' object has no attribute 'get'
+
+.venv\Lib\site-packages\pydantic\main.py:1042: AttributeError
+============================== warnings summary ===============================
+tests/bugs/test_bug14_backoffice_inyectando_chat.py::test_backoffice_does_not_inject_into_conversation
+  C:\Users\Alfonso\Desktop\git hub repos\agentic-os\.venv\Lib\site-packages\google\genai\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17
+    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]
+
+tests/bugs/test_bug18_auth_tenant_debil.py::test_auth_rejects_expired_key
+  C:\Users\Alfonso\Desktop\git hub repos\agentic-os\tests\bugs\test_bug18_auth_tenant_debil.py:37: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    credentials={"api_key": "old_key", "expires_at": (datetime.utcnow() - timedelta(days=1)).isoformat()},
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/kernel/test_invariants.py::test_replay_deterministic - agentic_o...
+FAILED tests/kernel/test_worldstate_typed.py::test_replay_rebuilds_typed_state_from_clean_log
+FAILED tests/kernel/test_worldstate_typed.py::test_replay_raises_with_index_of_corrupt_event
+FAILED tests/kernel/test_worldstate_typed.py::test_replay_never_returns_partial_state
+FAILED tests/bugs/test_bug11_scheduler_traga_excepciones.py::test_scheduler_handles_fire_exception_gracefully
+FAILED tests/bugs/test_bug8_pydantic_falso.py::test_apply_rejects_invalid_payload_transactionally
+FAILED tests/bugs/test_bug8_pydantic_falso.py::test_apply_rejects_entity_created_without_kind
+FAILED tests/bugs/test_bug8_pydantic_falso.py::test_apply_updates_entity_typed
+================== 8 failed, 186 passed, 2 warnings in 7.86s ==================
