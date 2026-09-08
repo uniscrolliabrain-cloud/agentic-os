@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..core.config import CredentialSet
 from ...kernel.types.time import now_utc
@@ -13,7 +13,14 @@ class TokenManager:
     def is_expired(expires_at: datetime | None) -> bool:
         if not expires_at:
             return False
-        return now_utc() >= expires_at.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        # Reloj canónico: now_utc() es la única fuente de tiempo del kernel.
+        # Los timestamps naive se interpretan como UTC (los genera el sistema
+        # con now_utc()); los aware se normalizan a UTC antes de comparar.
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        else:
+            expires_at = expires_at.astimezone(timezone.utc)
+        return now_utc() >= expires_at
 
     @staticmethod
     def refresh_if_needed(
