@@ -10,20 +10,6 @@ from ..types.ids import new_id
 from ..types.time import now_utc
 
 
-class EventPayload(BaseModel):
-    """Structured payload for critical events.
-
-    Events are audit trail data and must have clear contracts.
-    """
-    model_config = ConfigDict(frozen=True, extra="allow")
-
-    status: str = "unknown"
-    error: Optional[str] = None
-    error_type: Optional[str] = None
-    params: Optional[Dict[str, str]] = None
-    output_keys: Optional[List[str]] = None
-
-
 class Event(BaseModel):
     """
     Evento inmutable del sistema.
@@ -41,7 +27,7 @@ class Event(BaseModel):
     kind: str
     entity_id: str
 
-    payload: EventPayload = Field(default_factory=EventPayload)
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
     at: datetime = Field(default_factory=now_utc)
 
@@ -130,7 +116,5 @@ class EventLog(BaseModel):
             return len(self.events)
 
 
-# Rebuild models to resolve forward references
-EventPayload.model_rebuild()
-Event.model_rebuild()
+
 

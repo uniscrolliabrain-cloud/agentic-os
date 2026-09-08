@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .events import Event, EventPayload
+from typing import Any, Dict
+
+from .events import Event
 from .state import WorldState
 from ..ontology.domain_models import entity_from_payload
 
@@ -11,9 +13,9 @@ class InvalidEntityEventError(ValueError):
     """Evento de entidad invalido (fail-closed, nunca se ignora en silencio)."""
 
 
-def _payload_dict(payload: EventPayload) -> dict:
+def _payload_dict(payload: Dict[str, Any]) -> dict:
     """Convierte el payload a dict con los campos de entidad (sin campos base)."""
-    data = payload.model_dump()
+    data = dict(payload)
     # Eliminar campos base de EventPayload que no son datos de entidad
     for field in _BASE_PAYLOAD_FIELDS:
         data.pop(field, None)
@@ -31,7 +33,7 @@ def apply(state: WorldState, event: Event) -> WorldState:
     new_entities = dict(state.entities)
     new_relations = dict(state.relations)
     if event.kind == "entity_created":
-        kind = event.payload.kind or event.payload.entity_type
+        kind = event.payload.get("kind") or event.payload.get("entity_type")
         if not kind:
             raise InvalidEntityEventError(
                 f"entity_created sin kind/entity_type registrado "
