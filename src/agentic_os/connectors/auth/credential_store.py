@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -17,14 +19,19 @@ logger = logging.getLogger(__name__)
 _module_fernet = None
 
 
+class CredentialEncryptionError(Exception):
+    """Error de cifrado de credenciales (fail-closed)."""
+    pass
+
+
 def _fernet() -> "Fernet":
     """Devuelve una instancia Fernet estable para el proceso.
 
     Fuentes de clave, en orden de preferencia:
       1. settings.credential_encryption_key  (CREDENTIAL_ENCRYPTION_KEY)
       2. os.environ CREDENTIAL_ENCRYPTION_KEY
-      3. clave aleatoria por proceso (solo dev; advertimos en logs)
 
+    Si no hay clave configurada, lanza CredentialEncryptionError (fail-closed).
     Si la clave dada no es una clave Fernet válida (32 bytes base64 u-safe),
     se deriva una estable vía SHA-256 para que valores legibles sirvan.
     """
@@ -41,24 +48,22 @@ def _fernet() -> "Fernet":
     except Exception:
         raw_key = None
     if not raw_key:
-        import os
         raw_key = os.environ.get("CREDENTIAL_ENCRYPTION_KEY")
 
-    if raw_key:
-        try:
-            _module_fernet = Fernet(raw_key.encode())
-            return _module_fernet
-        except Exception:
-            digest = hashlib.sha256(raw_key.encode()).digest()
-            _module_fernet = Fernet(base64.urlsafe_b64encode(digest))
-            return _module_fernet
+    if not raw_key:
+        raise CredentialEncryptionError(
+            "CREDENTIAL_ENCRYPTION_KEY no configurada. "
+            "Las credenciales no pueden cifrarse sin clave. "
+            "Configura CREDENTIAL_ENCRYPTION_KEY en .env para producción."
+        )
 
-    _module_fernet = Fernet(Fernet.generate_key())
-    logger.warning(
-        "CREDENTIAL_ENCRYPTION_KEY no configurada: usando clave cifrado por proceso. "
-        "Las credenciales NO descifrarán tras un reinicio. Configúrala en .env para producción."
-    )
-    return _module_fernet
+    try:
+        _module_fernet = Fernet(raw_key.encode())
+        return _module_fernet
+    except Exception:
+        digest = hashlib.sha256(raw_key.encode()).digest()
+        _module_fernet = Fernet(base64.urlsafe_b64encode(digest))
+        return _module_fernet
 
 
 def _secret_value(value: Any) -> str:
@@ -155,13 +160,25 @@ class CredentialStore:
             "expires_at": credential_set.expires_at.isoformat() if credential_set.expires_at else None,
             "scopes": credential_set.scopes,
         }
-        with open(path, "w") as f:
-            json.dump(data, f)
-        # Mejor esfuerzo (Unix): el fichero no debe ser legible por otros usuarios.
+        # Escritura atómica: escribir a archivo temporal y renombrar con os.replace
+        # Esto evita corrupción si el proceso muere durante la escritura
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
         try:
-            path.chmod(0o600)
-        except OSError:
-            pass
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f)
+            # Mejor esfuerzo (Unix): el fichero no debe ser legible por otros usuarios.
+            try:
+                os.chmod(tmp_path, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp_path, str(path))
+        except Exception:
+            # Limpiar archivo temporal si algo falla
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def load(self, workspace: str, provider: str) -> "CredentialSet | None":
         path = _cred_path(workspace, provider, self.cred_dir)

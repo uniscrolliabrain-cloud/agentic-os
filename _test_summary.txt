@@ -1,0 +1,22 @@
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/bugs/test_bug18_auth_tenant_debil.py::test_auth_rejects_expired_key
+  C:\Users\Alfonso\Desktop\git hub repos\agentic-os\tests\bugs\test_bug18_auth_tenant_debil.py:37: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    credentials={"api_key": "old_key", "expires_at": (datetime.utcnow() - timedelta(days=1)).isoformat()},
+
+tests/security/test_hardening_fase1.py::test_tenant_public_nunca_expone_credentials
+  C:\Users\Alfonso\Desktop\git hub repos\agentic-os\tests\security\test_hardening_fase1.py:32: PydanticDeprecatedSince211: Accessing the 'model_fields' attribute on the instance is deprecated. Instead, you should access this attribute from the model class. Deprecated in Pydantic V2.11 to be removed in V3.0.
+    assert "credentials" not in pub.model_fields
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/security/test_credential_store.py::test_roundtrip_secretstr - ag...
+FAILED tests/security/test_credential_store.py::test_tenant_isolation_entre_workspaces
+FAILED tests/security/test_credential_store.py::test_delete - agentic_os.conn...
+FAILED tests/security/test_credential_store.py::test_base64_no_es_cifrado_documentado
+FAILED tests/security/test_credential_store.py::test_encrypted_alias_de_encode_no_confunde
+FAILED tests/test_bugs_3_4.py::test_credentials_not_base64 - src.agentic_os.c...
+6 failed, 352 passed, 4 warnings in 12.02s
+
+
+Return code: 1

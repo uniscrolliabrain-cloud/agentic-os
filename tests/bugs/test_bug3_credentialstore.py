@@ -1,16 +1,27 @@
 """Bug 3 - CredentialStore sin cifrado: solo Base64 [YA FIXEADO pero deja el test]"""
 
 import json
-import tempfile
 import os
+import tempfile
 from pathlib import Path
 
 from agentic_os.connectors.auth.credential_store import CredentialStore, EncodedFileCredentialStore
 from agentic_os.connectors.core.config import CredentialSet
+from cryptography.fernet import Fernet
+
+
+def _ensure_test_key():
+    """Configura una clave de test si no está configurada."""
+    if not os.environ.get("CREDENTIAL_ENCRYPTION_KEY"):
+        os.environ["CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+    # Reset cache para usar la clave configurada
+    import agentic_os.connectors.auth.credential_store as cs
+    cs._module_fernet = None
 
 
 def test_credentials_not_plaintext_on_disk():
     """Las credenciales NO deben aparecer en texto plano en disco."""
+    _ensure_test_key()
     with tempfile.TemporaryDirectory() as tmpdir:
         store = CredentialStore(cred_dir=tmpdir)
         store.save("tenant1", "google", CredentialSet(
@@ -27,6 +38,7 @@ def test_credentials_not_plaintext_on_disk():
 
 def test_credentials_not_base64_on_disk():
     """Las credenciales NO deben aparecer como Base64 decodificable sin clave (debe estar cifrado)."""
+    _ensure_test_key()
     with tempfile.TemporaryDirectory() as tmpdir:
         store = CredentialStore(cred_dir=tmpdir)
         store.save("tenant1", "google", CredentialSet(
@@ -49,6 +61,7 @@ def test_credentials_not_base64_on_disk():
 
 def test_credentials_roundtrip():
     """Las credenciales deben poder guardarse y recuperarse correctamente."""
+    _ensure_test_key()
     with tempfile.TemporaryDirectory() as tmpdir:
         store = CredentialStore(cred_dir=tmpdir)
         original = CredentialSet(
@@ -65,8 +78,10 @@ def test_credentials_roundtrip():
         assert loaded.scopes == ["https://mail.google.com/"]
 
 
+
 def test_encoded_store_is_encrypted_with_key() -> None:
     """EncodedFileCredentialStore ahora usa cifrado Fernet real, no Base64."""
+    _ensure_test_key()
     encoded = EncodedFileCredentialStore.encrypt("test_value")
     decoded = EncodedFileCredentialStore.decrypt(encoded)
     assert decoded == "test_value", "Fernet roundtrip debe funcionar"
@@ -89,8 +104,6 @@ def test_encoded_store_is_encrypted_with_key() -> None:
 def test_encoded_store_roundtrip_with_explicit_key() -> None:
     """Con CREDENTIAL_ENCRYPTION_KEY, guardar y recargar en OTRO proceso/instancia
     descifra correctamente (persistencia real entre reinicios)."""
-    import os
-    from cryptography.fernet import Fernet
     key = Fernet.generate_key().decode()
     # Fijar la clave del módulo (simula .env configurado) y resetear el cache
     os.environ["CREDENTIAL_ENCRYPTION_KEY"] = key
@@ -104,4 +117,30 @@ def test_encoded_store_roundtrip_with_explicit_key() -> None:
         assert decoded == "persistent_secret", "Fernet con clave estable debe persistir"
     finally:
         os.environ.pop("CREDENTIAL_ENCRYPTION_KEY", None)
+        cs._module_fernet = None
+
+
+def test_fail_closed_without_key() -> None:
+    """Sin CREDENTIAL_ENCRYPTION_KEY, CredentialStore debe fallar (fail-closed)."""
+    # Asegurar que no hay clave configurada
+    saved_key = os.environ.pop("CREDENTIAL_ENCRYPTION_KEY", None)
+    import agentic_os.connectors.auth.credential_store as cs
+    cs._module_fernet = None  # reset cache
+    try:
+        from agentic_os.connectors.auth.credential_store import CredentialEncryptionError
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = CredentialStore(cred_dir=tmpdir)
+            try:
+                store.save("tenant1", "google", CredentialSet(
+                    provider="google",
+                    auth_type="oauth2",
+                    data={"refresh_token": "secret"},
+                ))
+                assert False, "Debe lanzar CredentialEncryptionError sin clave configurada"
+            except CredentialEncryptionError:
+                pass  # Esperado: fail-closed
+    finally:
+        # Restaurar clave si existía
+        if saved_key:
+            os.environ["CREDENTIAL_ENCRYPTION_KEY"] = saved_key
         cs._module_fernet = None
