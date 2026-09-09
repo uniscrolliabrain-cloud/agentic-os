@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, List, Optional
 
 from .action import Action
 from .result import ExecutionResult
 from .tools.registry import ToolRegistry
+from ..cognition.roles.library import LIBRARY as ROLES_LIBRARY
+from ..cognition.skills.library import SKILLS as EXECUTABLE_SKILLS
 from ..kernel.policy.engine import PolicyEngine
 from ..kernel.policy.evaluator import Decision
 from ..kernel.world.events import Event
@@ -56,6 +59,32 @@ def _safe_error(error: Exception) -> str:
         )
 
     return message
+
+
+def _forbidden_for_roles(
+    roles: Optional[List[str]],
+    tool: str,
+) -> Optional[str]:
+    """Devuelve el motivo si algún rol prohíbe ``tool`` (fail-closed).
+
+    - Rol desconocido -> se deniega (nunca se confía en roles inventados).
+    - ``forbidden_tools`` con ``"*"`` prohíbe cualquier herramienta.
+    """
+    if not roles:
+        return None
+    for role_name in roles:
+        role = ROLES_LIBRARY.get(role_name)
+        if role is None:
+            return (
+                f"rol '{role_name}' no registrado en "
+                "cognition/roles/library.py (fail-closed)"
+            )
+        forbidden = role.forbidden_tools
+        if "*" in forbidden or tool in forbidden:
+            return (
+                f"rol '{role_name}' tiene prohibida la herramienta '{tool}'"
+            )
+    return None
 
 
 class Executor:
@@ -405,3 +434,132 @@ class Executor:
             output=result.get("output"),
             error=result.get("error"),
         )
+
+    def execute_skill(
+        self,
+        intent,
+        tenant_id: str,
+        roles: Optional[List[str]] = None,
+        context: Any = None,
+        correlation_id: Optional[str] = None,
+        command_id: Optional[str] = None,
+        actor_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Ejecuta un Skill Pydantic congelado a partir de un Intent propuesto.
+
+        Blindaje anti Prompt Injection + policy gate:
+          1. El texto libre del SKILL.md NUNCA se ejecuta: solo mapea
+             ``intent.kind`` a las clases ``Skill`` frozen de ``library.SKILLS``.
+          2. ``forbidden_tools`` del rol -> fail-closed antes de tocar cualquier
+             herramienta (sin ejecutar nada).
+          3. ``policy.decide(tenant_id, capability, roles)`` por paso: deny /
+             require_approval abortan la cadena en seco.
+        """
+        if intent is None:
+            return {"success": False, "error": "intent requerido"}
+
+        raw_kind = str(getattr(intent, "kind", "") or "")
+        if not raw_kind or "\n" in raw_kind or "---" in raw_kind:
+            # Marcadores de prompt injection / frontmatter en el kind: rechazar.
+            return {
+                "success": False,
+                "error": (
+                    "skill: kind de intent sospechoso "
+                    "(posible prompt injection); rechazado"
+                ),
+            }
+
+        skill = EXECUTABLE_SKILLS.get(raw_kind)
+        if skill is None:
+            return {
+                "success": False,
+                "error": (
+                    f"skill no registrado en library.SKILLS: "
+                    f"'{raw_kind}' (fail-closed)"
+                ),
+            }
+
+        if not tenant_id:
+            return {"success": False, "error": "tenant_id obligatorio"}
+
+        payload_text = getattr(intent, "payload", None)
+        params: Dict[str, Any] = {}
+        if isinstance(payload_text, dict):
+            params = dict(payload_text)
+        elif isinstance(payload_text, str) and payload_text.strip():
+            try:
+                parsed = json.loads(payload_text)
+                if isinstance(parsed, dict):
+                    params = parsed
+            except json.JSONDecodeError:
+                params = {}
+
+        steps_output: List[Dict[str, Any]] = []
+        for step in skill.steps:
+            forbidden = _forbidden_for_roles(roles, step.tool)
+            if forbidden is not None:
+                self._audit(
+                    "SkillBlocked",
+                    step.tool,
+                    tenant_id,
+                    {"reason": forbidden, "step": step.name},
+                    actor_id,
+                    correlation_id,
+                    command_id,
+                )
+                return {
+                    "success": False,
+                    "error": f"SkillBlocked: {forbidden}",
+                    "step": step.name,
+                    "tool": step.tool,
+                }
+
+            decision = self._decision(
+                action=step.tool,
+                tenant_id=tenant_id,
+                roles=roles,
+                context=context,
+            )
+            if decision.effect != "allow":
+                self._audit(
+                    "SkillBlocked",
+                    step.tool,
+                    tenant_id,
+                    {"reason": decision.reason, "step": step.name},
+                    actor_id,
+                    correlation_id,
+                    command_id,
+                )
+                return {
+                    "success": False,
+                    "error": f"SkillBlocked por policy: {decision.reason}",
+                    "step": step.name,
+                    "tool": step.tool,
+                }
+
+            result = self.execute(
+                action=step.tool,
+                params=params,
+                context=context,
+                roles=roles,
+                tenant_id=tenant_id,
+                correlation_id=correlation_id,
+                command_id=command_id,
+                actor_id=actor_id,
+            )
+            if not result.get("success", False):
+                return {
+                    "success": False,
+                    "error": result.get("error", f"paso '{step.name}' falló"),
+                    "step": step.name,
+                    "tool": step.tool,
+                }
+            steps_output.append(
+                {
+                    "step": step.name,
+                    "tool": step.tool,
+                    "output": result.get("output"),
+                }
+            )
+
+        return {"success": True, "skill": skill.name, "steps": steps_output}

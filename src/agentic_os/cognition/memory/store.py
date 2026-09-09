@@ -37,18 +37,26 @@ class MemoryStore:
     def delete(self, item_id: str) -> None:
         self._items.pop(item_id, None)
 
+    def score(self, query: str, item: MemoryItem) -> int:
+        """Magnetismo determinista de un ítem respecto a una query (nº total
+        de coincidencias de términos en id + content + metadata)."""
+        q = (query or "").strip().lower()
+        if not q:
+            return 0
+        terms = q.split()
+        haystack = " ".join(
+            [item.id, item.content]
+            + [str(v) for v in item.metadata.values()]
+        ).lower()
+        return sum(haystack.count(t) for t in terms)
+
     def search(self, query: str) -> list[MemoryItem]:
         q = (query or "").strip().lower()
         if not q:
             return []
-        terms = q.split()
         scored: list[tuple[int, str, MemoryItem]] = []
         for item in self._items.values():
-            haystack = " ".join(
-                [item.id, item.content]
-                + [str(v) for v in item.metadata.values()]
-            ).lower()
-            score = sum(haystack.count(t) for t in terms)
+            score = self.score(q, item)
             if score > 0:
                 scored.append((score, item.id, item))
         scored.sort(key=lambda t: (-t[0], t[1]))

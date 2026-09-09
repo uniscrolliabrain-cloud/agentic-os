@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ...cognition.planning.intent import Intent
-from ...cognition.skills.library import SKILLS
+from ...cognition.skills.library import SKILLS, install_skill
 from ...execution.executor import Executor
 from ...execution.tools import build_default_registry
 from ...infrastructure.config.settings import settings
@@ -576,6 +576,19 @@ class SkillOut(BaseModel):
     description: str
     steps: List[str]
 
+class InstallSkillRequest(BaseModel):
+    content: str  # SKILL.md con frontmatter YAML
+
+class SkillInstallOut(BaseModel):
+    id: str
+    name: str
+    version: str
+    pipeline_id: str
+    content_md5: str
+
+class RunSkillRequest(BaseModel):
+    intent: Dict[str, Any]  # {goal, kind, payload, rationale, ...}
+
 class ToolOut(BaseModel):
     name: str
 
@@ -638,6 +651,27 @@ def delete_tenant(tenant_id: str, _: bool = Depends(admin_scope)) -> Dict[str, s
 def list_skills() -> List[SkillOut]:
     return [SkillOut(name=s.name, description=s.description, steps=[step.name for step in s.steps]) for s in SKILLS.values()]
 
+
+@app.post("/api/skills/install", response_model=SkillInstallOut, status_code=201)
+def install_skill_endpoint(req: InstallSkillRequest, scope: str = Depends(tenant_scope)) -> SkillInstallOut:
+    """Instala un Prompt Skill (SKILL.md) para el tenant autenticado.
+
+    Fail-closed: el pipeline_id/name debe existir en el registro Pydantic
+    inmutable (SKILLS); si no, responde 400 sin instalar nada.
+    El tenant SIEMPRE viene de la cabecera (tenant_scope), nunca del body.
+    """
+    try:
+        item = install_skill(req.content, tenant_id=scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SkillInstallOut(
+        id=item.id,
+        name=item.metadata["name"],
+        version=item.metadata["version"],
+        pipeline_id=item.metadata["pipeline_id"],
+        content_md5=item.metadata["content_md5"],
+    )
+
 @app.get("/api/tools", response_model=List[ToolOut])
 def list_tools() -> List[ToolOut]:
     return [ToolOut(name=t.name) for t in _executor.registry.tools.values()]
@@ -662,6 +696,44 @@ def execute(req: ExecuteRequest, scope: str = Depends(tenant_scope)) -> ExecuteR
                 error=result.get("error", f"Acción '{req.action}' denegada o fallida"),
             )
         return ExecuteResponse(success=True, result=result.get("output", result))
+    except Exception:
+        return ExecuteResponse(success=False, result=None, error="execution failed")
+
+
+@app.post("/api/skills/run", response_model=ExecuteResponse)
+def run_skill(req: RunSkillRequest, scope: str = Depends(tenant_scope)) -> ExecuteResponse:
+    """Ejecuta un Skill Pydantic congelado desde un Intent propuesto, bajo el
+    policy engine y las forbidden_tools del rol activo.
+
+    Anti prompt-injection: el executor solo mapea intent.kind a las clases
+    Skill frozen de library.SKILLS; el texto libre del SKILL.md nunca se
+    ejecuta como comando. El tenant SIEMPRE viene de la cabecera.
+    """
+    tenant = _tenant_registry.get(scope)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    try:
+        raw = dict(req.intent)
+        payload = raw.pop("payload", None)
+        if payload is not None and not isinstance(payload, str):
+            payload = json.dumps(payload, ensure_ascii=False)
+        if payload is not None:
+            raw["payload"] = payload
+        intent = Intent(**raw)
+    except Exception:
+        return ExecuteResponse(success=False, result=None, error="intent inválido")
+    try:
+        result = _executor.execute_skill(
+            intent=intent,
+            tenant_id=tenant.id,
+            roles=[_orchestrator.current_role.name],
+            context=TenantContext(tenant=tenant),
+        )
+        return ExecuteResponse(
+            success=result.get("success", False),
+            result=result.get("steps", result),
+            error=result.get("error"),
+        )
     except Exception:
         return ExecuteResponse(success=False, result=None, error="execution failed")
 
