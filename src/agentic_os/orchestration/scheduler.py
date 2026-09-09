@@ -190,7 +190,14 @@ class Scheduler:
                 correlation_id,
                 command_id,
             )
+        except Exception as audit_error:
+            # Si la auditoría inicial no puede persistirse, registramos
+            # y continuamos (el trigger aún puede ejecutarse).
+            logger.exception(
+                "No se pudo persistir ScheduledPipelineStarted"
+            )
 
+        try:
             if self.on_trigger is None:
                 return
 

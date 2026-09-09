@@ -6,7 +6,7 @@ from .events import Event
 from .state import WorldState
 from ..ontology.domain_models import entity_from_payload
 
-_BASE_PAYLOAD_FIELDS = {"status", "error", "error_type", "params", "output_keys"}
+_BASE_PAYLOAD_FIELDS = {"error", "error_type", "params", "output_keys"}
 
 
 class InvalidEntityEventError(ValueError):
