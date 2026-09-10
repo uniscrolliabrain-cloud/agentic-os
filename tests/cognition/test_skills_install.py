@@ -5,7 +5,9 @@ import hashlib
 import pytest
 
 import agentic_os.cognition.skills.library as lib
-from agentic_os.cognition.memory.store import MemoryStore
+from agentic_os.cognition.beliefs.belief import Belief
+from agentic_os.cognition.memory.store import MemoryItem, MemoryStore
+from agentic_os.cognition.planning.intent import Intent
 from agentic_os.infrastructure.persistence.memory import InMemoryEventLog
 
 VALID_MD = """---
@@ -17,6 +19,37 @@ pipeline_id: inbox_zero
 Sigue el skill inbox_zero. Lee el inbox, clasifica y propón un intent
 estructurado. Nunca ejecutes nada directamente: solo propón.
 """
+
+
+def test_no_hay_modelos_duplicados():
+    """Feedback PR #1: NO se crean modelos nuevos — se usan los canónicos.
+
+    Memoria, creencias e intenciones deben ser las MISMAS clases del
+    codebase (identidad de objeto), nunca redefiniciones locales.
+    """
+    import agentic_os.cognition.reasoning.proposer as proposer_mod
+
+    # library y el proposer importan MemoryItem/Belief/Intent desde las
+    # ubicaciones canónicas → misma identidad de clase.
+    assert lib.MemoryItem is MemoryItem
+    assert proposer_mod.Belief is Belief
+    assert proposer_mod.Intent is Intent
+    # El executor no define modelos propios: usa el registro inmutable SKILLS.
+    from agentic_os.execution.executor import EXECUTABLE_SKILLS
+
+    assert EXECUTABLE_SKILLS is lib.SKILLS
+
+
+def test_registro_skills_es_inmutable():
+    """Feedback PR #1: el registro SKILLS debe ser inmutable (anti-tampering)."""
+    from types import MappingProxyType
+
+    assert isinstance(lib.SKILLS, MappingProxyType)
+    # SKILL_REGISTRY es el alias canónico del MISMO objeto inmutable.
+    assert lib.SKILL_REGISTRY is lib.SKILLS
+    # Intentar mutar el registro falla en seco.
+    with pytest.raises(TypeError):
+        lib.SKILLS["otro_skill"] = "no"
 
 
 @pytest.fixture()

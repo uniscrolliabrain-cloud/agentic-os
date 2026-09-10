@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from types import MappingProxyType
 from typing import Any, Dict, Tuple
 
 import yaml
@@ -11,7 +12,7 @@ from ...kernel.world.events import Event
 
 from .skill import Skill, SkillStep
 
-SKILLS = {
+_SKILLS: Dict[str, Skill] = {
     # --- Gestión de email (inbox zero) ---
     "inbox_zero": Skill(
         name="inbox_zero",
@@ -92,6 +93,15 @@ SKILLS = {
     ),
 }
 
+# Registro canónico e INMUTABLE de Skills ejecutables (fail-closed).
+# - Cada Skill ya es una instancia Pydantic frozen=True (no mutable).
+# - MappingProxyType hace la colección inmutable: ningún módulo puede
+#   añadir/eliminar/reemplazar skills en runtime (anti-tampering).
+# SKILL_REGISTRY es el alias canónico; SKILLS se conserva por compatibilidad
+# con imports existentes (rest.py, executor.py) y son EL MISMO objeto.
+SKILLS: MappingProxyType[str, Skill] = MappingProxyType(_SKILLS)
+SKILL_REGISTRY = SKILLS
+
 # Almacén del sistema para los Prompt Skills instalados (divulgación progresiva).
 # `install_skill` persiste aquí las fichas MemoryItem; la búsqueda top-k por
 # tenant usa el magnetismo determinista de `MemoryStore.search`.
@@ -140,10 +150,10 @@ def install_skill(skill_md_content: str, tenant_id: str) -> MemoryItem:
     Mecanismo fail-closed:
     - El frontmatter debe declarar ``name``, ``description``, ``version`` y
       ``pipeline_id`` (o ``triggers``).
-    - El ``pipeline_id``/``name`` debe existir en el registro ``SKILLS`` de
-      clases Pydantic inmutables; si no hay un Skill ejecutable equivalente,
-      se cancela la instalación con ``ValueError`` (nada de texto libre se
-      registra como ejecutable).
+    - El ``pipeline_id``/``name`` debe existir en el registro INMUTABLE
+      ``SKILLS`` (MappingProxyType de Skill Pydantic frozen); si no hay un
+      Skill ejecutable equivalente, se cancela la instalación con
+      ``ValueError`` (nada de texto libre se registra como ejecutable).
     - La ficha se persiste en ``PROMPT_SKILLS`` como ``MemoryItem`` con el
       hash MD5 del contenido (mitiga drift) y se audita un evento
       ``SkillInstalled`` en el EventLog del tenant.

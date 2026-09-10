@@ -95,6 +95,65 @@ def test_kind_sospechoso_prompt_injection_rechazado(monkeypatch):
     assert result["success"] is False
     assert "sospechoso" in result["error"] or "injection" in result["error"]
 # ------------------------------------------- 3. policy gate por paso -----
+class _PolicySpy:
+    """Doble del PolicyEngine que registra las llamadas a decide()."""
+
+    def __init__(self, effect="allow", reason="ok"):
+        self.effect = effect
+        self.reason = reason
+        self.calls = []
+
+    def decide(self, tenant_id, capability, resource_kind=None, roles=None):
+        self.calls.append(
+            {
+                "tenant_id": tenant_id,
+                "capability": capability,
+                "resource_kind": resource_kind,
+                "roles": roles,
+            }
+        )
+        from agentic_os.kernel.policy.evaluator import Decision
+
+        return Decision(effect=self.effect, reason=self.reason)
+
+
+def test_execute_skill_consulta_policy_engine_con_firma_canonica(monkeypatch):
+    """Feedback PR #1: execute_skill() integra el PolicyEngine existente.
+
+    Cada paso se autoriza llamando a decision = self.policy.decide(
+    tenant_id=..., capability=..., roles=...) con la firma canónica del
+    motor (no una firma inventada), y deny/require_approval abortan en seco.
+    """
+    monkeypatch.setenv("DEV_ALLOW_ALL", "false")  # la policy decide de verdad
+    log = InMemoryEventLog()
+    registry = ToolRegistry()
+    gmail = RecordingTool("gmail_send")
+    doc = RecordingTool("documentation_create")
+    registry.register(gmail)
+    registry.register(doc)
+
+    spy = _PolicySpy(effect="deny", reason="policy deniega gmail_send")
+    ex = Executor(registry=registry, policy_engine=spy, event_log=log)
+
+    intent = Intent(goal="enviar email", kind="send_email_sop", payload="{}")
+    result = ex.execute_skill(intent=intent, tenant_id="tenant-1", roles=["director"])
+
+    # Se consultó al motor con tenant_id + capability + roles (firma real).
+    assert spy.calls, "execute_skill no consultó el PolicyEngine"
+    assert spy.calls[0]["tenant_id"] == "tenant-1"
+    assert spy.calls[0]["capability"] == "gmail_send"
+    assert spy.calls[0]["roles"] == ["director"]
+    # Deny del motor => skill bloqueado sin ejecutar tool.
+    assert result["success"] is False
+    assert "deniega" in result["error"]
+    assert gmail.calls == []
+    assert doc.calls == []
+    # Auditoría del bloqueo.
+    assert any(
+        e.kind == "SkillBlocked" for e in log.list_for_tenant("tenant-1")
+    )
+
+
 def test_policy_deny_bloquea_el_paso(monkeypatch):
     # Sin DEV_ALLOW_ALL => el tenant no registrado -> default-deny.
     monkeypatch.delenv("DEV_ALLOW_ALL", raising=False)
