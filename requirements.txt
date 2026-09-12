@@ -1,1 +1,1 @@
--e .[serve]
+-e .[serve]temporalio>=1.9.0
