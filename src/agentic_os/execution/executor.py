@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
@@ -205,6 +205,24 @@ class Executor:
             actor_id
             or (roles[0] if roles else "executor")
         )
+
+               # ------------------------------------------ IDEMPOTENCY CHECK
+        if command_id and tid:
+            cached = self.idempotency.get(tid, command_id)
+            if cached is not None:
+                self._audit(
+                    "ActionIdempotentHit",
+                    action,
+                    tid,
+                    {
+                        "command_id": command_id,
+                        "cached": True,
+                    },
+                    actor,
+                    correlation_id,
+                    command_id,
+                )
+                return cached
 
         # ------------------------------------------------ POLICY
 
@@ -440,3 +458,4 @@ class Executor:
             output=result.get("output"),
             error=result.get("error"),
         )
+
