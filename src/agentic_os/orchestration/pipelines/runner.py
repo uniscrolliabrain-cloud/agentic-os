@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from...infrastructure.idempotency import IdempotencyStore
+from ...infrastructure.idempotency import IdempotencyStore
 
 class PipelineStepError(Exception):
     def __init__(self, tool_name: str, error: str):

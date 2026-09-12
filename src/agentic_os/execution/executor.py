@@ -208,7 +208,7 @@ class Executor:
             or (roles[0] if roles else "executor")
         )
 
-               # ------------------------------------------ IDEMPOTENCY CHECK
+        # ------------------------------------------ IDEMPOTENCY CHECK
         if command_id and tid:
             cached = self.idempotency.get(tid, command_id)
             if cached is not None:
