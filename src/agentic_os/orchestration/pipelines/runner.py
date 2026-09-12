@@ -42,6 +42,7 @@ class PipelineRunner:
         llm: Any = None,
     ):
         self.executor = executor
+        self.idempotency = IdempotencyStore()
         self.llm = llm
 
     def tool(
@@ -82,7 +83,15 @@ class PipelineRunner:
 
         return {"data": output}
 
-    def run(
+    def run(self, tenant_id: str = None, command_id: str = None, correlation_id: str = None, **kwargs):
+        tid = tenant_id or "system"
+        if command_id:
+            cached = self.idempotency.get(tid, f"pipeline:{command_id}")
+            if cached:
+                return cached
+        return self._run_impl(tid, command_id, correlation_id, **kwargs)
+
+    def _run_impl(
         self,
         pipeline_id: str,
         tenant_id: str,
@@ -134,7 +143,12 @@ class PipelineRunner:
                 },
             )
 
-            return result
+            if command_id:
+            try:
+                self.idempotency.save(tid, f"pipeline:{command_id}", result)
+            except Exception:
+                pass
+        return result
 
         except Exception as error:
 
