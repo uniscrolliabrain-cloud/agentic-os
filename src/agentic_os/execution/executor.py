@@ -9,6 +9,7 @@ from .tools.registry import ToolRegistry
 from ..kernel.policy.engine import PolicyEngine
 from ..kernel.policy.evaluator import Decision
 from ..kernel.world.events import Event
+from ..infrastructure.idempotency import IdempotencyStore
 
 
 _SECRET_PATTERNS = [
@@ -69,6 +70,7 @@ class Executor:
         self.registry = registry or ToolRegistry()
         self.policy = policy_engine or PolicyEngine()
         self.event_log = event_log
+        self.idempotency = IdempotencyStore()
 
     def _audit(
         self,
@@ -343,29 +345,6 @@ class Executor:
                 command_id,
             )
         except Exception as audit_err:
-            # Fail-closed: si la auditoría inicial no puede persistirse,
-            # la operación no puede considerarse exitosa.
-            return {
-                "success": False,
-                "error": f"audit failed: {_safe_error(audit_err)}",
-            }
-
-        try:
-            self._audit(
-                "ActionStarted",
-                action,
-                tid,
-                {
-                    "status": "started",
-                    "params": self._params_summary(params),
-                },
-                actor,
-                correlation_id,
-                command_id,
-            )
-        except Exception as audit_err:
-            # Fail-closed: si la auditoría inicial no puede persistirse,
-            # la operación no puede considerarse exitosa.
             return {
                 "success": False,
                 "error": f"audit failed: {_safe_error(audit_err)}",
