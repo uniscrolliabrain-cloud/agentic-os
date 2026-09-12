@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import threading
@@ -523,14 +523,16 @@ _policy_engine = PolicyEngine()
 # registry/executor del módulo (resuelto en runtime, no en import).
 _scheduler = Scheduler(data_dir=DATA_DIR, event_log=_event_log, on_trigger=None)
 
-
 def _run_scheduled_pipeline(
     pipeline_id,
     tenant_id,
     correlation_id=None,
     command_id=None,
 ):
-    """Callback del scheduler: ejecuta el pipeline auditando en el EventLog."""
+    """Callback del scheduler: si hay Temporal, encola workflow. Si no, fallback directo."""
+    import os
+    import asyncio
+
     tenant = _tenant_registry.get(tenant_id)
     if tenant is None:
         raise HTTPException(
@@ -538,6 +540,62 @@ def _run_scheduled_pipeline(
             detail="Tenant no encontrado",
         )
 
+    # Intenta via Temporal si hay env var
+    temporal_host = os.getenv("TEMPORAL_HOST")
+    if temporal_host:
+        try:
+            from agentic_os.orchestration.temporal.client import start_pipeline
+
+            async def _start():
+                return await start_pipeline(
+                    pipeline_id=pipeline_id,
+                    tenant_id=tenant_id,
+                    params={"correlation_id": correlation_id, "command_id": command_id}
+                )
+
+            # Scheduler corre en thread, necesita nuevo loop
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Estamos en thread de APScheduler, no hay loop corriendo
+                    wf_id = asyncio.run(_start())
+                else:
+                    wf_id = loop.run_until_complete(_start())
+            except RuntimeError:
+                wf_id = asyncio.run(_start())
+
+            _event_log.append(
+                Event(
+                    kind="ScheduledPipelineEnqueued",
+                    entity_id=f"pipeline://{pipeline_id}",
+                    tenant_id=tenant_id,
+                    actor_id="scheduler",
+                    payload={
+                        "pipeline_id": pipeline_id,
+                        "workflow_id": wf_id,
+                        "via": "temporal",
+                    },
+                    correlation_id=correlation_id,
+                    command_id=command_id,
+                )
+            )
+            return {"status": "ENQUEUED", "workflow_id": wf_id, "via": "temporal"}
+
+        except Exception as e:
+            # Fail-open a directo si Temporal no responde, pero audita
+            _event_log.append(
+                Event(
+                    kind="TemporalEnqueueFailedFallback",
+                    entity_id=f"pipeline://{pipeline_id}",
+                    tenant_id=tenant_id,
+                    actor_id="scheduler",
+                    payload={"error": str(e)[:300], "fallback": "direct"},
+                    correlation_id=correlation_id,
+                    command_id=command_id,
+                )
+            )
+
+    # Fallback directo (sin Temporal / dev local)
     result = _orchestrator.handle_pipeline(
         pipeline_id=pipeline_id,
         tenant_id=tenant_id,
@@ -556,6 +614,7 @@ def _run_scheduled_pipeline(
             payload={
                 "pipeline_id": pipeline_id,
                 "status": result.get("status"),
+                "via": "direct",
             },
             correlation_id=correlation_id,
             command_id=command_id,
@@ -563,7 +622,6 @@ def _run_scheduled_pipeline(
     )
 
     return result
-
 
 _scheduler.on_trigger = _run_scheduled_pipeline
 _executor = Executor(registry=build_default_registry(scheduler=_scheduler), policy_engine=_policy_engine, event_log=_event_log)

@@ -2,8 +2,12 @@
 import os
 from temporalio.client import Client
 from temporalio.worker import Worker
-from.workflows import PipelineWorkflow
-from.activities import execute_action_activity, audit_event_activity
+
+from agentic_os.orchestration.temporal.workflows import PipelineWorkflow
+from agentic_os.orchestration.temporal.activities import (
+    execute_action_activity,
+    audit_event_activity,
+)
 
 async def main():
     host = os.getenv("TEMPORAL_HOST", "localhost:7233")
@@ -12,7 +16,7 @@ async def main():
         client,
         task_queue="agentic-os-queue",
         workflows=[PipelineWorkflow],
-        activities=[execute_action_activity, audit_event_activity]
+        activities=[execute_action_activity, audit_event_activity],
     )
     print(f"Worker Agentic OS corriendo en {host} / agentic-os-queue...")
     await worker.run()

@@ -5,8 +5,11 @@ services:
     environment:
       POSTGRES_PASSWORD: temporal
       POSTGRES_USER: temporal
+      POSTGRES_DB: temporal
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   temporal:
     image: temporalio/auto-setup:1.31.2
@@ -22,14 +25,25 @@ services:
     ports:
       - "7233:7233"
       - "8233:8233"
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address temporal:7233 cluster health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   worker:
-    build:.
+    build: .
     depends_on:
-      - temporal
+      temporal:
+        condition: service_healthy
     environment:
       - TEMPORAL_HOST=temporal:7233
       - PYTHONPATH=/app/src
-    command: python -m agentic_os.orchestration.temporal.worker
     volumes:
-      -./src:/app/src
+      - ./src:/app/src
+    command: python -m agentic_os.orchestration.temporal.worker
+    restart: unless-stopped
+
+volumes:
+  pgdata:
