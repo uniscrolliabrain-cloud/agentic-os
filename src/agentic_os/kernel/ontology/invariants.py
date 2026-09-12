@@ -5,7 +5,7 @@ el LLM nunca decide si una ontología es válida.
 """
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from .entities import Entity
 from .relations import Relation
@@ -81,7 +81,7 @@ def validate_relation(
 
 def validate_all_relations(
     entity_map: Mapping[str, Entity],
-    relations,
+    relations: Iterable[Relation],
 ) -> None:
     """Aplica validate_relation a todas las relaciones (determinista)."""
     for relation in relations:

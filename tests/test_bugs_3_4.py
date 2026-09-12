@@ -1,10 +1,10 @@
 """Bug 3 (legacy, test original de aider): las credenciales no se persisten
 en claro ni en base64 en disco. Actualizado a la API Fernet actual."""
-from src.agentic_os.connectors.auth.credential_store import CredentialStore
+from agentic_os.connectors.auth.credential_store import CredentialStore
 
 
 def test_credentials_not_base64(tmp_path):
-    from src.agentic_os.connectors.core.config import CredentialSet
+    from agentic_os.connectors.core.config import CredentialSet
 
     store = CredentialStore(cred_dir=str(tmp_path))
     cred = CredentialSet(

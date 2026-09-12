@@ -1,0 +1,23 @@
+# Cada línea asigna revisores obligatorios a un path.
+# Sustituye @tu-usuario-github por el/los handles reales.
+
+# Owner por defecto de todo el repo
+*                                   @tu-usuario-github
+
+# Kernel (invariantes) — máxima criticidad, revisión obligatoria
+/src/agentic_os/kernel/             @tu-usuario-github
+
+# Policy engine y permisos
+/src/agentic_os/kernel/policy/      @tu-usuario-github
+
+# Conectores y credenciales — superficie de seguridad
+/src/agentic_os/connectors/         @tu-usuario-github
+
+# Infraestructura de tenancy (aislamiento multi-cliente)
+/src/agentic_os/infrastructure/tenancy/  @tu-usuario-github
+
+# Documentación de especificación formal
+/docs/spec/                         @tu-usuario-github
+
+# CI/CD y configuración de repo
+/.github/                           @tu-usuario-github

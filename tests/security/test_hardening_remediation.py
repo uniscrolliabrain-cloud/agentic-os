@@ -94,11 +94,11 @@ def test_api_state_esta_aislado_por_tenant(client_env):
     log.append(Event(kind="EvA2", entity_id="2", tenant_id=ta.id))
     log.append(Event(kind="EvB1", entity_id="3", tenant_id="tenant-b"))
 
-    r_a = c.get("/api/state", headers={"X-Tenant-Id": ta.id, "X-Api-Key": "key-tenant-a"})
+    r_a = c.get("/api/v1/state", headers={"X-Tenant-Id": ta.id, "X-Api-Key": "key-tenant-a"})
     assert r_a.status_code == 200
     assert r_a.json()["event_count"] == 2  # Solo los de Tenant A
 
-    r_sys = c.get("/api/state")  # Scope 'system'
+    r_sys = c.get("/api/v1/state")  # Scope 'system'
     assert r_sys.status_code == 200
     assert r_sys.json()["event_count"] == 0
 
@@ -125,7 +125,7 @@ def test_api_tasks_esta_aislado_por_tenant(client_env):
             "summary": "",
         }
 
-    r_a = c.get("/api/tasks", headers={"X-Tenant-Id": ta.id, "X-Api-Key": "key-tenant-a"})
+    r_a = c.get("/api/v1/tasks", headers={"X-Tenant-Id": ta.id, "X-Api-Key": "key-tenant-a"})
     assert r_a.status_code == 200
     tasks_a = r_a.json()
     assert len(tasks_a) == 1
@@ -139,11 +139,11 @@ def test_tenant_sin_api_key_exige_admin_auth(client_env):
     tb = client_env["tb"]
 
     # Acceso sin key a un tenant sin key -> 401
-    r = c.get("/api/state", headers={"X-Tenant-Id": tb.id})
+    r = c.get("/api/v1/state", headers={"X-Tenant-Id": tb.id})
     assert r.status_code == 401
 
     # Acceso con admin key -> 200
-    r_admin = c.get("/api/state", headers={"X-Tenant-Id": tb.id, "X-Admin-Key": "secret-admin-master-key"})
+    r_admin = c.get("/api/v1/state", headers={"X-Tenant-Id": tb.id, "X-Admin-Key": "secret-admin-master-key"})
     assert r_admin.status_code == 200
 
 
@@ -153,12 +153,12 @@ def test_api_tenants_mutations_requieren_admin_key(client_env):
     ta = client_env["ta"]
 
     # POST sin admin key -> 401
-    r_create_noauth = c.post("/api/tenants", json={"name": "Test", "slug": "test-unauth"})
+    r_create_noauth = c.post("/api/v1/tenants", json={"name": "Test", "slug": "test-unauth"})
     assert r_create_noauth.status_code == 401
 
     # POST con admin key -> 201
     r_create = c.post(
-        "/api/tenants",
+        "/api/v1/tenants",
         json={"name": "Test", "slug": "test-created"},
         headers={"X-Admin-Key": "secret-admin-master-key"},
     )
@@ -167,12 +167,12 @@ def test_api_tenants_mutations_requieren_admin_key(client_env):
     assert new_t["slug"] == "test-created"
 
     # PATCH sin admin key -> 401
-    r_patch_noauth = c.patch(f"/api/tenants/{ta.id}", json={"name": "Nuevo Nombre"})
+    r_patch_noauth = c.patch(f"/api/v1/tenants/{ta.id}", json={"name": "Nuevo Nombre"})
     assert r_patch_noauth.status_code == 401
 
     # PATCH con admin key -> 200
     r_patch = c.patch(
-        f"/api/tenants/{ta.id}",
+        f"/api/v1/tenants/{ta.id}",
         json={"name": "Tenant A Actualizado"},
         headers={"X-Admin-Key": "secret-admin-master-key"},
     )
@@ -180,11 +180,11 @@ def test_api_tenants_mutations_requieren_admin_key(client_env):
     assert r_patch.json()["name"] == "Tenant A Actualizado"
 
     # DELETE sin admin key -> 401
-    r_del_noauth = c.delete(f"/api/tenants/{new_t['id']}")
+    r_del_noauth = c.delete(f"/api/v1/tenants/{new_t['id']}")
     assert r_del_noauth.status_code == 401
 
     # DELETE con admin key -> 200
-    r_del = c.delete(f"/api/tenants/{new_t['id']}", headers={"X-Admin-Key": "secret-admin-master-key"})
+    r_del = c.delete(f"/api/v1/tenants/{new_t['id']}", headers={"X-Admin-Key": "secret-admin-master-key"})
     assert r_del.status_code == 200
 
 
@@ -221,7 +221,7 @@ def test_api_execute_respeta_policy_del_tenant(client_env):
 
     # Acción no habilitada para Tenant A ("slack_send")
     r_denied = c.post(
-        "/api/execute",
+        "/api/v1/execute",
         json={"action": "slack_send", "params": {"channel": "general", "text": "hola"}},
         headers={"X-Tenant-Id": ta.id, "X-Api-Key": "key-tenant-a"},
     )

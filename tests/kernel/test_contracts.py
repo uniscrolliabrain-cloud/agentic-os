@@ -183,9 +183,3 @@ class TestOutputContract:
     def test_extra_fields_forbidden(self) -> None:
         with pytest.raises(ValidationError):
             OutputContract(fields=[], unknown_field="bad")
-
-            contract.fields = []
-
-    def test_extra_fields_forbidden(self) -> None:
-        with pytest.raises(ValidationError):
-            InputContract(fields=[], unknown_field="bad")

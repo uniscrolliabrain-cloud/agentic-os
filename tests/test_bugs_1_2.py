@@ -5,8 +5,8 @@ import os
 import pytest
 
 from agentic_os.connectors.core.http import HttpClient, _safe_headers
-from agentic_os.core.config import Config
 from agentic_os.execution.tools.base import ToolValidationError
+from agentic_os.infrastructure.config.settings import Settings
 
 
 # ============================================================================
@@ -62,49 +62,48 @@ async def test_http_client_ssrf_blocking_local_and_private_ips():
 
 
 # ============================================================================
-# Bug #2 Tests - Config (Secrets Redaction & Env Loading)
+# Bug #2 Tests - Settings (Secrets Redaction & Production Validation)
 # ============================================================================
 
-def test_config_loads_from_env():
-    env = {
-        "API_KEY": "valid_api_key_123",
-        "SECRET_KEY": "valid_secret_key_456",
-        "ADMIN_KEY": "valid_admin_key_789",
-        "ENV": "staging",
-        "DEBUG": "true",
-    }
-    cfg = Config(env=env)
-    assert cfg.api_key == "valid_api_key_123"
-    assert cfg.secret_key == "valid_secret_key_456"
-    assert cfg.admin_key == "valid_admin_key_789"
+def test_settings_loads_from_env(monkeypatch):
+    monkeypatch.setenv("ADMIN_API_KEY", "valid_admin_key_789")
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEY", "valid_encryption_key_456")
+    monkeypatch.setenv("ENV", "staging")
+    cfg = Settings(_env_file=None)
+    assert cfg.admin_api_key == "valid_admin_key_789"
+    assert cfg.credential_encryption_key == "valid_encryption_key_456"
     assert cfg.env == "staging"
-    assert cfg.debug is True
 
 
-def test_config_fails_when_secrets_missing():
-    # Environment missing SECRET_KEY
-    env = {"API_KEY": "valid_api_key_123"}
-    with pytest.raises(ValueError, match="Missing required secret environment variable"):
-        Config(env=env)
+def test_settings_fails_in_production_without_encryption_key(monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.delenv("CREDENTIAL_ENCRYPTION_KEY", raising=False)
+    with pytest.raises(ValueError, match="CREDENTIAL_ENCRYPTION_KEY"):
+        Settings(_env_file=None)
 
 
-def test_config_redacts_secrets_in_repr_and_str():
-    env = {
-        "API_KEY": "super_secret_api_key",
-        "SECRET_KEY": "super_secret_jwt_key",
-        "ADMIN_KEY": "super_secret_admin_key",
-    }
-    cfg = Config(env=env)
-    
+def test_settings_allows_dev_without_encryption_key(monkeypatch):
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.delenv("CREDENTIAL_ENCRYPTION_KEY", raising=False)
+    cfg = Settings(_env_file=None)  # no debe lanzar en dev (ver PRE_PRODUCTION_CHECKLIST.md #1)
+    assert cfg.credential_encryption_key is None
+
+
+def test_settings_redacts_secrets_in_repr_and_str(monkeypatch):
+    monkeypatch.setenv("ADMIN_API_KEY", "super_secret_admin_key")
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEY", "super_secret_encryption_key")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "super_secret_stripe_key")
+    cfg = Settings(_env_file=None)
+
     repr_str = repr(cfg)
     str_str = str(cfg)
-    
-    assert "super_secret_api_key" not in repr_str
-    assert "super_secret_jwt_key" not in repr_str
+
     assert "super_secret_admin_key" not in repr_str
+    assert "super_secret_encryption_key" not in repr_str
+    assert "super_secret_stripe_key" not in repr_str
     assert "***REDACTED***" in repr_str
-    
-    assert "super_secret_api_key" not in str_str
-    assert "super_secret_jwt_key" not in str_str
+
     assert "super_secret_admin_key" not in str_str
+    assert "super_secret_encryption_key" not in str_str
+    assert "super_secret_stripe_key" not in str_str
     assert "***REDACTED***" in str_str

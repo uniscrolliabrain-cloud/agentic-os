@@ -2,17 +2,12 @@ from __future__ import annotations
 
 from typing import List
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
+from ..kernel.types import KernelModel
 
-class InputField(BaseModel):
+class InputField(KernelModel):
     """Campo de entrada tipado para contratos de Skills y Pipelines."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        validate_assignment=True,
-    )
 
     name: str = Field(..., min_length=1, description="Nombre único del campo")
     type_str: str = Field(..., min_length=1, description="Tipo declarado del campo")
@@ -20,28 +15,16 @@ class InputField(BaseModel):
     required: bool = Field(True, description="Indica si el campo es obligatorio")
 
 
-class OutputField(BaseModel):
+class OutputField(KernelModel):
     """Campo de salida tipado para contratos de Skills y Pipelines."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        validate_assignment=True,
-    )
 
     name: str = Field(..., min_length=1, description="Nombre único del campo")
     type_str: str = Field(..., min_length=1, description="Tipo declarado del campo")
     description: str = Field("", description="Descripción del propósito del campo")
 
 
-class InputContract(BaseModel):
+class InputContract(KernelModel):
     """Contrato de entrada: lista validada de campos requeridos por un Skill o Pipeline."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        validate_assignment=True,
-    )
 
     fields: List[InputField] = Field(
         default_factory=list,
@@ -62,14 +45,8 @@ class InputContract(BaseModel):
         return value
 
 
-class OutputContract(BaseModel):
+class OutputContract(KernelModel):
     """Contrato de salida: lista validada de campos producidos por un Skill o Pipeline."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        validate_assignment=True,
-    )
 
     fields: List[OutputField] = Field(
         default_factory=list,

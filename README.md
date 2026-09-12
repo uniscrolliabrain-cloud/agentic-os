@@ -29,8 +29,7 @@ docs/                 arquitectura, invariantes, ontología, gobernanza
 ### 1. Backend (FastAPI local)
 
 ```bash
-pip install -e .
-pip install fastapi uvicorn
+pip install -e ".[serve]"
 cp .env.example .env   # rellena GEMINI_API_KEY
 uvicorn run_api:app --reload --port 8000
 ```
@@ -57,23 +56,23 @@ pytest
 
 | Método | Ruta                                    | Descripción                                        |
 |--------|-----------------------------------------|----------------------------------------------------|
-| GET    | `/api/state`                            | Rol activo y número de eventos en el log           |
-| GET    | `/api/events`                           | Lista de eventos auditables (EventLog)             |
-| POST   | `/api/chat`                             | PR responde rápido (knowledge base) + orquestador en segundo plano |
-| GET    | `/api/tasks`                           | Estado de las tareas de orquestación en background |
-| GET    | `/api/conversations`                    | Lista conversaciones guardadas                     |
-| POST   | `/api/conversations`                    | Crea una conversación nueva                        |
-| GET    | `/api/conversations/{id}`               | Carga una conversación por id                      |
-| POST   | `/api/conversations/{id}/messages`      | Añade un mensaje a una conversación                |
-| DELETE | `/api/conversations/{id}`               | Elimina una conversación                           |
-| GET    | `/api/tenants`                          | Lista clientes (tenants) registrados               |
-| POST   | `/api/tenants`                          | Registra un nuevo cliente                          |
-| GET    | `/api/tenants/{id}`                     | Obtiene un cliente por id                          |
-| PATCH  | `/api/tenants/{id}`                     | Actualiza nombre/config de un cliente              |
-| DELETE | `/api/tenants/{id}`                     | Elimina un cliente                                 |
-| GET    | `/api/skills`                           | Lista el catálogo de skills/SOPs                   |
-| GET    | `/api/tools`                            | Lista las herramientas disponibles                 |
-| POST   | `/api/execute`                          | Ejecuta una acción (LLM→Policy→Executor)          |
+| GET    | `/api/v1/state`                            | Rol activo y número de eventos en el log           |
+| GET    | `/api/v1/events`                           | Lista de eventos auditables (EventLog)             |
+| POST   | `/api/v1/chat`                             | PR responde rápido (knowledge base) + orquestador en segundo plano |
+| GET    | `/api/v1/tasks`                           | Estado de las tareas de orquestación en background |
+| GET    | `/api/v1/conversations`                    | Lista conversaciones guardadas                     |
+| POST   | `/api/v1/conversations`                    | Crea una conversación nueva                        |
+| GET    | `/api/v1/conversations/{id}`               | Carga una conversación por id                      |
+| POST   | `/api/v1/conversations/{id}/messages`      | Añade un mensaje a una conversación                |
+| DELETE | `/api/v1/conversations/{id}`               | Elimina una conversación                           |
+| GET    | `/api/v1/tenants`                          | Lista clientes (tenants) registrados               |
+| POST   | `/api/v1/tenants`                          | Registra un nuevo cliente                          |
+| GET    | `/api/v1/tenants/{id}`                     | Obtiene un cliente por id                          |
+| PATCH  | `/api/v1/tenants/{id}`                     | Actualiza nombre/config de un cliente              |
+| DELETE | `/api/v1/tenants/{id}`                     | Elimina un cliente                                 |
+| GET    | `/api/v1/skills`                           | Lista el catálogo de skills/SOPs                   |
+| GET    | `/api/v1/tools`                            | Lista las herramientas disponibles                 |
+| POST   | `/api/v1/execute`                          | Ejecuta una acción (LLM→Policy→Executor)          |
 
 Las conversaciones se guardan en `data/conversations/*.json` (persistencia en disco).
 Los tenants se guardan en `data/tenants/registry.json`.
@@ -98,7 +97,7 @@ Usuario escribe
 
 - Para alimentar la knowledge base, añade/edita markdown en `knowledge/`.
 - La UI muestra "⚙️ Orquestador procesando en segundo plano…" y refresca el log al terminar.
-- Endpoint auxiliar: `GET /api/tasks` devuelve el estado de las tareas en background.
+- Endpoint auxiliar: `GET /api/v1/tasks` devuelve el estado de las tareas en background.
 
 ## Arquitectura determinista
 

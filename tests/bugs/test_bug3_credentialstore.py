@@ -5,6 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
 from agentic_os.connectors.auth.credential_store import CredentialStore, EncodedFileCredentialStore
 from agentic_os.connectors.core.config import CredentialSet
 from cryptography.fernet import Fernet
@@ -120,27 +121,20 @@ def test_encoded_store_roundtrip_with_explicit_key() -> None:
         cs._module_fernet = None
 
 
-def test_fail_closed_without_key() -> None:
+def test_fail_closed_without_key(monkeypatch) -> None:
     """Sin CREDENTIAL_ENCRYPTION_KEY, CredentialStore debe fallar (fail-closed)."""
-    # Asegurar que no hay clave configurada
-    saved_key = os.environ.pop("CREDENTIAL_ENCRYPTION_KEY", None)
+    from agentic_os.infrastructure.config.settings import settings
+    monkeypatch.setattr(settings, "credential_encryption_key", None)
+    monkeypatch.delenv("CREDENTIAL_ENCRYPTION_KEY", raising=False)
     import agentic_os.connectors.auth.credential_store as cs
     cs._module_fernet = None  # reset cache
-    try:
-        from agentic_os.connectors.auth.credential_store import CredentialEncryptionError
-        with tempfile.TemporaryDirectory() as tmpdir:
-            store = CredentialStore(cred_dir=tmpdir)
-            try:
-                store.save("tenant1", "google", CredentialSet(
-                    provider="google",
-                    auth_type="oauth2",
-                    data={"refresh_token": "secret"},
-                ))
-                assert False, "Debe lanzar CredentialEncryptionError sin clave configurada"
-            except CredentialEncryptionError:
-                pass  # Esperado: fail-closed
-    finally:
-        # Restaurar clave si existía
-        if saved_key:
-            os.environ["CREDENTIAL_ENCRYPTION_KEY"] = saved_key
-        cs._module_fernet = None
+    from agentic_os.connectors.auth.credential_store import CredentialEncryptionError
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CredentialStore(cred_dir=tmpdir)
+        with pytest.raises(CredentialEncryptionError):
+            store.save("tenant1", "google", CredentialSet(
+                provider="google",
+                auth_type="oauth2",
+                data={"refresh_token": "secret"},
+            ))
+    cs._module_fernet = None

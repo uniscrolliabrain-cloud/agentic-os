@@ -53,10 +53,10 @@ def test_api_tenants_nunca_filtra_secret(monkeypatch):
     try:
         with TestClient(rest_mod.app) as client:
             # sin admin -> 401
-            r_unauth = client.get("/api/tenants")
+            r_unauth = client.get("/api/v1/tenants")
             assert r_unauth.status_code == 401
 
-            r = client.get("/api/tenants", headers={"X-Admin-Key": "admin-key-test"})
+            r = client.get("/api/v1/tenants", headers={"X-Admin-Key": "admin-key-test"})
             assert r.status_code == 200
             assert "secret-xyz" not in r.text
             assert "credentials" not in r.text

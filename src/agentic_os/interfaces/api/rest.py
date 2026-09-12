@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -40,6 +41,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/health")
+async def health() -> dict:
+    """Liveness probe: el proceso está vivo. No toca dependencias externas."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready() -> JSONResponse:
+    """Readiness probe: el EventLog configurado responde de verdad."""
+    checks: dict[str, str] = {}
+    try:
+        get_eventlog_repo().list_all()
+        checks["eventlog"] = "ok"
+    except Exception as exc:
+        checks["eventlog"] = f"error: {exc}"
+
+    healthy = all(v == "ok" for v in checks.values())
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "degraded", "checks": checks},
+    )
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 CONVERSATIONS_DIR = DATA_DIR / "conversations"  # legacy (pre multi-tenant); solo lectura
@@ -264,14 +287,14 @@ class StateOut(BaseModel):
 def root() -> Dict[str, str]:
     return {"app": "Agentic OS", "status": "ok"}
 
-@app.get("/api/state", response_model=StateOut)
+@app.get("/api/v1/state", response_model=StateOut)
 def get_state(scope: str = Depends(tenant_scope)) -> StateOut:
     return StateOut(
         role=_orchestrator.current_role.name,
         event_count=len(_event_log.list_for_tenant(scope)),
     )
 
-@app.get("/api/events", response_model=List[EventOut])
+@app.get("/api/v1/events", response_model=List[EventOut])
 def get_events(scope: str = Depends(tenant_scope)) -> List[EventOut]:
     """Eventos del tenant resuelto por cabecera — nunca de todos los tenants."""
     return [
@@ -398,12 +421,12 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
     threading.Thread(target=_run, daemon=True).start()
     return task_id
 
-@app.get("/api/tasks")
+@app.get("/api/v1/tasks")
 def list_tasks(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
     with _tasks_lock:
         return [dict(t) for t in _background_tasks.values() if t.get("tenant_id") == scope]
 
-@app.post("/api/chat", response_model=ChatResponse)
+@app.post("/api/v1/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, scope: str = Depends(tenant_scope)) -> ChatResponse:
     message = req.message.strip()
     if not message:
@@ -441,7 +464,7 @@ def _iter_conversation_paths(scope: str):
         if conv.get("tenant_id", "system") == scope:
             yield path
 
-@app.get("/api/conversations", response_model=List[ConversationSummary])
+@app.get("/api/v1/conversations", response_model=List[ConversationSummary])
 def list_conversations(scope: str = Depends(tenant_scope)) -> List[ConversationSummary]:
     summaries = []
     seen = set()
@@ -462,19 +485,19 @@ def list_conversations(scope: str = Depends(tenant_scope)) -> List[ConversationS
     summaries.sort(key=lambda c: c.updated_at, reverse=True)
     return summaries
 
-@app.post("/api/conversations", response_model=ConversationOut, status_code=201)
+@app.post("/api/v1/conversations", response_model=ConversationOut, status_code=201)
 def create_conversation(scope: str = Depends(tenant_scope)) -> ConversationOut:
     now = now_utc().isoformat()
     conv = {"id": str(uuid.uuid4()), "tenant_id": scope, "title": "Nueva conversación", "created_at": now, "updated_at": now, "messages": []}
     _save_conversation(conv)
     return ConversationOut(**conv)
 
-@app.get("/api/conversations/{conv_id}", response_model=ConversationOut)
+@app.get("/api/v1/conversations/{conv_id}", response_model=ConversationOut)
 def get_conversation(conv_id: str, scope: str = Depends(tenant_scope)) -> ConversationOut:
     conv = _load_conversation(conv_id, scope)
     return ConversationOut(**conv)
 
-@app.post("/api/conversations/{conv_id}/messages", response_model=ConversationOut)
+@app.post("/api/v1/conversations/{conv_id}/messages", response_model=ConversationOut)
 def add_message(conv_id: str, msg: MessageOut, scope: str = Depends(tenant_scope)) -> ConversationOut:
     conv = _load_conversation(conv_id, scope)
     conv["messages"].append({"role": msg.role, "content": msg.content})
@@ -484,7 +507,7 @@ def add_message(conv_id: str, msg: MessageOut, scope: str = Depends(tenant_scope
     _save_conversation(conv)
     return ConversationOut(**conv)
 
-@app.delete("/api/conversations/{conv_id}")
+@app.delete("/api/v1/conversations/{conv_id}")
 def delete_conversation(conv_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, str]:
     path = _find_conv_path(conv_id, scope)
     if path is None:
@@ -579,11 +602,11 @@ class SkillOut(BaseModel):
 class ToolOut(BaseModel):
     name: str
 
-@app.get("/api/tenants", response_model=List[TenantOut])
+@app.get("/api/v1/tenants", response_model=List[TenantOut])
 def list_tenants(_: bool = Depends(admin_scope)) -> List[TenantOut]:
     return [TenantOut(id=t.id, name=t.config.name, slug=t.slug, config=TenantConfigPublic.from_config(t.config).model_dump(), created_at=t.created_at.isoformat()) for t in _tenant_registry.list_all()]
 
-@app.post("/api/tenants", response_model=TenantOut, status_code=201)
+@app.post("/api/v1/tenants", response_model=TenantOut, status_code=201)
 def create_tenant(req: TenantCreate, _: bool = Depends(admin_scope)) -> TenantOut:
     try:
         tenant = _tenant_registry.create(name=req.name, slug=req.slug, config=req.config or {})
@@ -602,14 +625,14 @@ def create_tenant(req: TenantCreate, _: bool = Depends(admin_scope)) -> TenantOu
         created_at=tenant.created_at.isoformat(),
     )
 
-@app.get("/api/tenants/{tenant_id}", response_model=TenantOut)
+@app.get("/api/v1/tenants/{tenant_id}", response_model=TenantOut)
 def get_tenant(tenant_id: str, _: bool = Depends(admin_scope)) -> TenantOut:
     tenant = _tenant_registry.get(tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
     return TenantOut(id=tenant.id, name=tenant.config.name, slug=tenant.slug, config=TenantConfigPublic.from_config(tenant.config).model_dump(), created_at=tenant.created_at.isoformat())
 
-@app.patch("/api/tenants/{tenant_id}", response_model=TenantOut)
+@app.patch("/api/v1/tenants/{tenant_id}", response_model=TenantOut)
 def update_tenant(tenant_id: str, req: TenantUpdate, _: bool = Depends(admin_scope)) -> TenantOut:
     tenant = _tenant_registry.get(tenant_id)
     if tenant is None:
@@ -628,21 +651,22 @@ def update_tenant(tenant_id: str, req: TenantUpdate, _: bool = Depends(admin_sco
     _tenant_registry.update(updated)
     return TenantOut(id=updated.id, name=updated.config.name, slug=updated.slug, config=TenantConfigPublic.from_config(updated.config).model_dump(), created_at=updated.created_at.isoformat())
 
-@app.delete("/api/tenants/{tenant_id}")
+@app.delete("/api/v1/tenants/{tenant_id}")
 def delete_tenant(tenant_id: str, _: bool = Depends(admin_scope)) -> Dict[str, str]:
     if not _tenant_registry.delete(tenant_id):
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
     return {"status": "deleted", "id": tenant_id}
 
-@app.get("/api/skills", response_model=List[SkillOut])
+@app.get("/api/v1/skills", response_model=List[SkillOut])
 def list_skills() -> List[SkillOut]:
-    return [SkillOut(name=s.name, description=s.description, steps=[step.name for step in s.steps]) for s in SKILLS.values()]
+    items = SKILLS.values() if hasattr(SKILLS, "values") else SKILLS
+    return [SkillOut(name=s.name, description=s.description, steps=[step.name for step in s.steps]) for s in items]
 
-@app.get("/api/tools", response_model=List[ToolOut])
+@app.get("/api/v1/tools", response_model=List[ToolOut])
 def list_tools() -> List[ToolOut]:
     return [ToolOut(name=t.name) for t in _executor.registry.tools.values()]
 
-@app.post("/api/execute", response_model=ExecuteResponse)
+@app.post("/api/v1/execute", response_model=ExecuteResponse)
 def execute(req: ExecuteRequest, scope: str = Depends(tenant_scope)) -> ExecuteResponse:
     # FASE 4: el tenant SIEMPRE viene de la cabecera, nunca del body
     tenant = _tenant_registry.get(scope)
@@ -684,7 +708,7 @@ class ScheduleOut(BaseModel):
     minutes: Optional[int] = None
 
 
-@app.get("/api/schedules", response_model=List[ScheduleOut])
+@app.get("/api/v1/schedules", response_model=List[ScheduleOut])
 def list_schedules(scope: str = Depends(tenant_scope)) -> List[ScheduleOut]:
     """Schedules del tenant de la petición — nunca de otros tenants."""
     return [
@@ -700,7 +724,7 @@ def list_schedules(scope: str = Depends(tenant_scope)) -> List[ScheduleOut]:
     ]
 
 
-@app.post("/api/schedules", response_model=ScheduleOut, status_code=201)
+@app.post("/api/v1/schedules", response_model=ScheduleOut, status_code=201)
 def create_schedule(req: ScheduleCreate, scope: str = Depends(tenant_scope)) -> ScheduleOut:
     if not req.pipeline_id:
         raise HTTPException(status_code=400, detail="pipeline_id es obligatorio")
@@ -716,14 +740,14 @@ def create_schedule(req: ScheduleCreate, scope: str = Depends(tenant_scope)) -> 
     )
 
 
-@app.delete("/api/schedules/{schedule_id}")
+@app.delete("/api/v1/schedules/{schedule_id}")
 def delete_schedule(schedule_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
     if not _scheduler.remove_schedule(scope, schedule_id):
         raise HTTPException(status_code=404, detail="Schedule no encontrado")
     return {"status": "deleted", "id": schedule_id}
 
 
-@app.get("/api/drafts")
+@app.get("/api/v1/drafts")
 def list_drafts(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
     """Drafts de email del tenant (creados por pipelines SIMULADOS)."""
     drafts_dir = TENANTS_DATA_DIR / scope / "drafts"
@@ -738,7 +762,7 @@ def list_drafts(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
     return drafts
 
 
-@app.get("/api/artifacts")
+@app.get("/api/v1/artifacts")
 def list_artifacts(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
     """Lista artefactos del tenant (pipeline daily_social etc)."""
     artifacts_dir = TENANTS_DATA_DIR / scope / "artifacts"
@@ -753,7 +777,7 @@ def list_artifacts(scope: str = Depends(tenant_scope)) -> List[Dict[str, Any]]:
     return out
 
 
-@app.get("/api/artifacts/{tenant_id}/{artifact_id}")
+@app.get("/api/v1/artifacts/{tenant_id}/{artifact_id}")
 def get_artifact(tenant_id: str, artifact_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
     """Artefacto de un pipeline. FASE 4: el tenant del path debe coincidir con el scope."""
     if tenant_id != scope:

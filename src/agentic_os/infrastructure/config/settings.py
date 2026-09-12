@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -97,5 +97,26 @@ class Settings(BaseSettings):
     jira_email: Optional[str] = Field(default=None, alias="JIRA_EMAIL")
     connector_cred_dir: Optional[str] = Field(default="./data/creds", alias="CONNECTOR_CRED_DIR")
     credential_encryption_key: Optional[str] = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY")
+
+    def model_post_init(self, __context: Any) -> None:
+        # Ver docs/PRE_PRODUCTION_CHECKLIST.md #1: fail-closed solo en
+        # producción por ahora. Antes del primer despliegue real, esto debe
+        # pasar a exigirse siempre (quitar el condicional de self.env).
+        if self.env == "production" and not self.credential_encryption_key:
+            raise ValueError(
+                "CREDENTIAL_ENCRYPTION_KEY es obligatoria cuando ENV=production. "
+                "Sin ella, las credenciales de conectores se cifran con una clave "
+                "por proceso y no sobreviven a un reinicio. Ver docs/PRE_PRODUCTION_CHECKLIST.md."
+            )
+
+    def __repr__(self) -> str:
+        redacted_markers = ("key", "secret", "token", "password", "dsn")
+        fields = {
+            name: ("***REDACTED***" if value and any(m in name for m in redacted_markers) else value)
+            for name, value in self.model_dump().items()
+        }
+        return f"Settings({fields})"
+
+    __str__ = __repr__
 
 settings = Settings()

@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from agentic_os.kernel.ontology.entities import Entity
+from agentic_os.kernel.ontology.domain_models import DomainEntity, EntityRef
 from agentic_os.kernel.ontology.invariants import (
     INVARIANTS,
     OntologyViolation,
@@ -22,26 +23,33 @@ from agentic_os.kernel.ontology.validator import (
 )
 
 
+def _entity(kind: str, entity_id: str) -> Entity:
+    return Entity(
+        ref=EntityRef(entity_id=entity_id, entity_type=kind, tenant_id="t"),
+        data=DomainEntity(entity_type=kind, tenant_id="t"),
+    )
+
+
 # ------------------------------------------------------------------ #9 Entity
 def test_entity_kind_canonico_acepta_slug() -> None:
-    e = Entity(kind="actor")
+    e = _entity("actor", "a1")
     assert e.kind == "actor"
-    assert e.id  # default factory new_id
+    assert e.id == "a1"
 
 
-@pytest.mark.parametrize("bad", ["", "Actor", "bad kind", "x/y", ".."])
+@pytest.mark.parametrize("bad", ["Actor", "bad kind", "x/y", ".."])
 def test_entity_kind_invalido_rechazado(bad) -> None:
-    with pytest.raises(ValidationError):
-        Entity(kind=bad)
+    with pytest.raises(OntologyValidationError):
+        OntologyValidator().validate(entities=[_entity(bad, "a1")], relations=[])
 
 
 def test_entity_id_vacio_rechazado() -> None:
-    with pytest.raises(ValidationError):
-        Entity(id="", kind="tool")
+    with pytest.raises(ValidationError, match="entity_id"):
+        _entity("tool", "")
 
 
 def test_entity_frozen() -> None:
-    e = Entity(kind="tool")
+    e = _entity("tool", "a1")
     with pytest.raises(ValidationError):
         e.kind = "actor"  # type: ignore[misc]
 
@@ -77,9 +85,9 @@ def test_invariantes_declaradas_existen() -> None:
 
 def _map() -> dict:
     return {
-        "a1": Entity(id="a1", kind="actor"),
-        "t1": Entity(id="t1", kind="tool"),
-        "r1": Entity(id="r1", kind="resource"),
+        "a1": _entity("actor", "a1"),
+        "t1": _entity("tool", "t1"),
+        "r1": _entity("resource", "r1"),
     }
 
 
@@ -134,13 +142,13 @@ def test_validator_ontologia_valida() -> None:
 def test_validator_kind_fuera_de_vocabulario() -> None:
     with pytest.raises(OntologyValidationError):
         OntologyValidator().validate(
-            entities=[Entity(id="e1", kind="nave_espacial")],
+            entities=[_entity("nave_espacial", "e1")],
             relations=[],
         )
 
 
 def test_validator_referencias_rotas_y_duplicados() -> None:
-    ent = [Entity(id="a1", kind="actor"), Entity(id="a1", kind="agent")]
+    ent = [_entity("actor", "a1"), _entity("agent", "a1")]
     rels = [Relation(kind="uses", src_id="a1", dst_id="fantasma")]
     with pytest.raises(OntologyValidationError) as excinfo:
         OntologyValidator().validate(entities=ent, relations=rels)

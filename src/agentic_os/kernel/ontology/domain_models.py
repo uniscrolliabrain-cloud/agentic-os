@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..types import KernelModel
 from ..types.ids import new_id
 from ..types.time import now_utc
 
@@ -81,7 +82,7 @@ class BaseDomainModel(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _sync_entity_type_from_kind(self):
+    def _sync_entity_type_from_kind(self) -> "BaseDomainModel":
         """Sincroniza entity_type con kind si kind esta definido."""
         kind_val = getattr(self, "kind", None)
         if kind_val is not None and not self.entity_type:
@@ -91,6 +92,35 @@ class BaseDomainModel(BaseModel):
 
 # Alias de compatibilidad: DomainEntity es el nombre canonico solicitado.
 DomainEntity = BaseDomainModel
+
+
+class EntityRef(KernelModel):
+    """Identidad referenciable de una entidad del kernel."""
+
+    tenant_id: str
+    entity_id: str
+    entity_type: str
+
+    @field_validator("tenant_id")
+    @classmethod
+    def _tenant_id_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("tenant_id es obligatorio (invariante multi-tenant)")
+        return v
+
+    @field_validator("entity_id")
+    @classmethod
+    def _entity_id_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("entity_id es obligatorio")
+        return v
+
+    @field_validator("entity_type")
+    @classmethod
+    def _entity_type_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("entity_type es obligatorio (discriminador)")
+        return v
 
 
 # --- A2: Lead y Proposal ---
@@ -219,7 +249,7 @@ class UnknownEntityTypeError(KeyError):
     """Se pidio un kind no registrado en ENTITY_TYPE_REGISTRY (fail-closed)."""
 
 
-def entity_from_payload(kind: str, data: dict) -> BaseDomainModel:
+def entity_from_payload(kind: str, data: dict[str, Any]) -> BaseDomainModel:
     """Construye una entidad tipada a partir de kind + payload (fail-closed).
 
     Lanza UnknownEntityTypeError si kind no esta registrado y ValidationError

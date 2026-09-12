@@ -60,28 +60,28 @@ function App() {
 
   async function fetchState() {
     try {
-      const res = await fetch(`${API_BASE}/api/state`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/state`, { headers: headersWithTenant() })
       if (res.ok) setState(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchEvents() {
     try {
-      const res = await fetch(`${API_BASE}/api/events`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/events`, { headers: headersWithTenant() })
       if (res.ok) setEvents(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchConversations() {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/conversations`, { headers: headersWithTenant() })
       if (res.ok) setConversations(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchTenants() {
     try {
-      const res = await fetch(`${API_BASE}/api/tenants`)
+      const res = await fetch(`${API_BASE}/api/v1/tenants`)
       if (res.ok) {
         const data = await res.json()
         setTenants(data)
@@ -92,14 +92,14 @@ function App() {
 
   async function fetchSkills() {
     try {
-      const res = await fetch(`${API_BASE}/api/skills`)
+      const res = await fetch(`${API_BASE}/api/v1/skills`)
       if (res.ok) setSkills(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchTools() {
     try {
-      const res = await fetch(`${API_BASE}/api/tools`)
+      const res = await fetch(`${API_BASE}/api/v1/tools`)
       if (res.ok) setTools(await res.json())
     } catch (e) { console.error(e) }
   }
@@ -107,21 +107,21 @@ function App() {
   // FASE 6: scheduler + drafts + artifacts (siempre por tenant via cabecera)
   async function fetchSchedules() {
     try {
-      const res = await fetch(`${API_BASE}/api/schedules`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/schedules`, { headers: headersWithTenant() })
       if (res.ok) setSchedules(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchDrafts() {
     try {
-      const res = await fetch(`${API_BASE}/api/drafts`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/drafts`, { headers: headersWithTenant() })
       if (res.ok) setDrafts(await res.json())
     } catch (e) { console.error(e) }
   }
 
   async function fetchArtifacts() {
     try {
-      const res = await fetch(`${API_BASE}/api/artifacts`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/artifacts`, { headers: headersWithTenant() })
       if (res.ok) setArtifacts(await res.json())
     } catch (e) { console.error(e) }
   }
@@ -134,7 +134,7 @@ function App() {
       hour: newSchedule.hour ? Number(newSchedule.hour) : null,
     }
     try {
-      const res = await fetch(`${API_BASE}/api/schedules`, {
+      const res = await fetch(`${API_BASE}/api/v1/schedules`, {
         method: 'POST',
         headers: headersWithTenant({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
@@ -148,7 +148,7 @@ function App() {
 
   async function deleteSchedule(id) {
     try {
-      const res = await fetch(`${API_BASE}/api/schedules/${id}`, {
+      const res = await fetch(`${API_BASE}/api/v1/schedules/${id}`, {
         method: 'DELETE',
         headers: headersWithTenant(),
       })
@@ -166,7 +166,7 @@ function App() {
 
   async function newConversation() {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/conversations`, { method: 'POST', headers: headersWithTenant() })
       if (res.ok) {
         const conv = await res.json()
         setCurrentConvId(conv.id)
@@ -178,7 +178,7 @@ function App() {
 
   async function openConversation(convId) {
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/${convId}`, { headers: headersWithTenant() })
+      const res = await fetch(`${API_BASE}/api/v1/conversations/${convId}`, { headers: headersWithTenant() })
       if (res.ok) {
         const conv = await res.json()
         setCurrentConvId(conv.id)
@@ -189,7 +189,7 @@ function App() {
 
   async function deleteConversation(convId) {
     try {
-      await fetch(`${API_BASE}/api/conversations/${convId}`, { method: 'DELETE', headers: headersWithTenant() })
+      await fetch(`${API_BASE}/api/v1/conversations/${convId}`, { method: 'DELETE', headers: headersWithTenant() })
       if (currentConvId === convId) {
         setCurrentConvId(null)
         setMessages([])
@@ -203,7 +203,7 @@ function App() {
     if (!name) return
     const slug = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/(^-|-$)/g, '')
     try {
-      const res = await fetch(`${API_BASE}/api/tenants`, {
+      const res = await fetch(`${API_BASE}/api/v1/tenants`, {
         method: 'POST',
         headers: headersWithTenant({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ name, slug }),
@@ -232,7 +232,7 @@ function App() {
     setExecResult({ waiting: true })
     setShowExec(true)
     try {
-      const res = await fetch(`${API_BASE}/api/execute`, {
+      const res = await fetch(`${API_BASE}/api/v1/execute`, {
         method: 'POST',
         headers: headersWithTenant({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action, params }),
@@ -254,7 +254,7 @@ function App() {
     let convId = currentConvId
     if (!convId) {
       try {
-        const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: headersWithTenant() })
+        const res = await fetch(`${API_BASE}/api/v1/conversations`, { method: 'POST', headers: headersWithTenant() })
         if (res.ok) {
           const conv = await res.json()
           convId = conv.id
@@ -272,7 +272,7 @@ function App() {
     const timeout = setTimeout(() => controller.abort(), 50_000)
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await fetch(`${API_BASE}/api/v1/chat`, {
         method: 'POST',
         headers: headersWithTenant({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ message: text, conversation_id: convId }),
@@ -305,7 +305,7 @@ function App() {
 
   async function pollBackground(taskId, attempts = 30) {
     try {
-      const res = await fetch(`${API_BASE}/api/tasks`)
+      const res = await fetch(`${API_BASE}/api/v1/tasks`)
       if (!res.ok) throw new Error('error')
       const tasks = await res.json()
       const t = tasks.find((x) => x.id === taskId)

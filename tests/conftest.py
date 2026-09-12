@@ -9,7 +9,14 @@ Invariantes de test:
 """
 from __future__ import annotations
 
+import os
+
 import pytest
+
+os.environ.setdefault(
+    "CREDENTIAL_ENCRYPTION_KEY",
+    "test-secret-key-32-chars-long-abc!!",
+)
 
 from agentic_os.infrastructure.config.settings import settings
 
@@ -17,3 +24,12 @@ from agentic_os.infrastructure.config.settings import settings
 @pytest.fixture(autouse=True)
 def _no_real_google(monkeypatch):
     monkeypatch.setattr(settings, "google_real", False)
+
+
+@pytest.fixture(autouse=True)
+def _test_encryption_key(monkeypatch):
+    import agentic_os.connectors.auth.credential_store as cs_mod
+
+    monkeypatch.setattr(settings, "credential_encryption_key", "test-secret-key-32-chars-long-abc!!")
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEY", "test-secret-key-32-chars-long-abc!!")
+    cs_mod._module_fernet = None
