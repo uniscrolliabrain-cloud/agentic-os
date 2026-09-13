@@ -183,118 +183,121 @@ class SupabaseConnector(Connector):
     async def _exec_storage(self, client: Any, capability: str, params: Dict[str, Any]) -> CommandResult:
         storage = client.storage
         _storage_from = getattr(storage, "from")
-        op = capability.split(".", 1)[1]
 
-        if op == "upload":
+        if capability == "storage.file.upload":
             bucket = params.get("bucket", "")
             path = params.get("path", "")
             file_obj = params.get("file")
             _storage_from(bucket).upload(path, file_obj)
             return CommandResult(ok=True, output={"path": path, "bucket": bucket}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "download":
+        elif capability == "storage.file.download":
             bucket = params.get("bucket", "")
             path = params.get("path", "")
             res = _storage_from(bucket).download(path)
             return CommandResult(ok=True, output={"data": res, "bucket": bucket, "path": path}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "read":
+        elif capability == "storage.file.read":
             bucket = params.get("bucket", "")
             path = params.get("path", "")
             res = _storage_from(bucket).download(path)
             return CommandResult(ok=True, output={"data": res}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op in ("delete", "remove"):
+        elif capability in ("storage.file.delete", "storage.file.remove"):
             bucket = params.get("bucket", "")
             path = params.get("path", "")
             _storage_from(bucket).remove([path])
             return CommandResult(ok=True, output={"deleted": path}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "create":
+        elif capability == "storage.bucket.create":
             bucket = params.get("bucket", "")
             storage.create_bucket(bucket)
             return CommandResult(ok=True, output={"bucket": bucket}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "list":
-            bucket = params.get("bucket", "")
-            res = _storage_from(bucket).list("", {"limit": params.get("limit", 100)})
-            return CommandResult(ok=True, output={"items": res}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "folder.create":
+        elif capability == "storage.bucket.list":
+            buckets = storage.list_buckets()
+            return CommandResult(ok=True, output={"buckets": buckets}, connector_id=self.connector_id, provider=self.provider, capability=capability)
+        elif capability == "storage.folder.create":
             bucket = params.get("bucket", "")
             path = params.get("path", "")
             _storage_from(bucket).upload(path + "/.keep", b"")
             return CommandResult(ok=True, output={"folder": path}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "folder.list":
+        elif capability == "storage.folder.list":
             bucket = params.get("bucket", "")
             prefix = params.get("prefix", "")
             res = _storage_from(bucket).list(prefix, {"limit": params.get("limit", 100)})
             return CommandResult(ok=True, output={"items": res}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        return CommandResult(ok=False, error=f"Unknown storage op: {op}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
+        elif capability == "storage.file.list":
+            bucket = params.get("bucket", "")
+            prefix = params.get("prefix", "")
+            res = _storage_from(bucket).list(prefix, {"limit": params.get("limit", 100)})
+            return CommandResult(ok=True, output={"items": res}, connector_id=self.connector_id, provider=self.provider, capability=capability)
+        return CommandResult(ok=False, error=f"Unknown storage capability: {capability}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
 
     async def _exec_auth(self, client: Any, capability: str, params: Dict[str, Any]) -> CommandResult:
         auth = client.auth
-        op = capability.split(".", 1)[1]
 
-        if op == "signin":
+        if capability == "auth.signin.email":
             email = params.get("email")
             password = params.get("password")
             res = auth.sign_in_with_password({"email": email, "password": password})
             return CommandResult(ok=True, output={"user": res.user, "access_token": res.access_token}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "signout":
+        elif capability == "auth.signin.oauth":
+            provider = params.get("provider", "google")
+            res = auth.sign_in_with_oauth({"provider": provider})
+            return CommandResult(ok=True, output={"url": res.url}, connector_id=self.connector_id, provider=self.provider, capability=capability)
+        elif capability == "auth.signout":
             auth.sign_out()
             return CommandResult(ok=True, output={}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "user.get":
+        elif capability == "auth.user.get":
             user = auth.get_user()
             return CommandResult(ok=True, output={"user": user}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "user.update":
+        elif capability == "auth.user.update":
             data = params.get("data", {})
             res = auth.update_user(data)
             return CommandResult(ok=True, output={"user": res.user}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "token.refresh":
+        elif capability == "auth.token.refresh":
             res = auth.refresh_session()
             return CommandResult(ok=True, output={"access_token": res.access_token}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "jwt.verify":
+        elif capability == "auth.jwt.verify":
             token = params.get("token")
             from ...infrastructure.auth.jwt_verifier import get_verifier
             verifier = get_verifier()
             claims = verifier.verify(token)
             return CommandResult(ok=True, output={"claims": claims.model_dump()}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        return CommandResult(ok=False, error=f"Unknown auth op: {op}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
+        return CommandResult(ok=False, error=f"Unknown auth capability: {capability}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
 
     async def _exec_db(self, client: Any, capability: str, params: Dict[str, Any]) -> CommandResult:
         db = client.db
-        op = capability.split(".", 1)[1]
-        table = params.get("table", "")
 
-        if op == "query":
+        if capability == "db.query":
             return CommandResult(ok=False, error="db.query no soportado via PostgREST. Usa db.record.read con filtros.", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "record.create":
-            columns = params.get("columns", [])
+        elif capability == "db.record.create":
             values = params.get("values", {})
-            res = db.table(table).insert(values).execute()
+            res = db.table(params.get("table", "")).insert(values).execute()
             return CommandResult(ok=True, output={"data": res.data}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "record.read":
+        elif capability == "db.record.read":
             filters = params.get("filters", {})
             select = params.get("select", "*")
-            query = db.table(table).select(select)
+            query = db.table(params.get("table", "")).select(select)
             for k, v in filters.items():
                 query = query.eq(k, v)
             res = query.execute()
             return CommandResult(ok=True, output={"data": res.data}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "record.update":
+        elif capability == "db.record.update":
             filters = params.get("filters", {})
             values = params.get("values", {})
-            query = db.table(table).update(values)
+            query = db.table(params.get("table", "")).update(values)
             for k, v in filters.items():
                 query = query.eq(k, v)
             res = query.execute()
             return CommandResult(ok=True, output={"data": res.data}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "record.delete":
+        elif capability == "db.record.delete":
             filters = params.get("filters", {})
-            query = db.table(table).delete()
+            query = db.table(params.get("table", "")).delete()
             for k, v in filters.items():
                 query = query.eq(k, v)
             res = query.execute()
             return CommandResult(ok=True, output={"deleted": len(res.data) if res.data else 0}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        elif op == "schema.inspect":
+        elif capability == "db.schema.inspect":
             try:
                 tables = db.table("information_schema.tables").select("table_name").execute()
                 return CommandResult(ok=True, output={"tables": tables.data}, connector_id=self.connector_id, provider=self.provider, capability=capability)
             except Exception:
                 return CommandResult(ok=True, output={"tables": []}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-        return CommandResult(ok=False, error=f"Unknown db op: {op}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
+        return CommandResult(ok=False, error=f"Unknown db capability: {capability}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)

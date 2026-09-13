@@ -1,4 +1,4 @@
-"""tests.infrastructure.test_supabase_jwt_auth: verificacion JWT en REST API."""
+"""tests.interfaces.test_supabase_jwt_auth: verificacion JWT en REST API."""
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -9,7 +9,6 @@ class TestSupabaseJWTAuth:
     @pytest.mark.asyncio
     @patch("agentic_os.interfaces.api.rest._verify_supabase_jwt")
     def test_tenant_scope_con_jwt_valido(self, mock_verify):
-        from fastapi import Header
         mock_verify.return_value = {
             "tenant_id": "tenant-1",
             "user_id": "user-1",
@@ -43,14 +42,3 @@ class TestSupabaseJWTAuth:
         assert _verify_supabase_jwt(None) is None
         assert _verify_supabase_jwt("") is None
         assert _verify_supabase_jwt("Basic abc") is None
-
-    @pytest.mark.asyncio
-    def test_tenant_scope_sin_auth_cae_en_x_tenant_id(self):
-        from agentic_os.interfaces.api.rest import tenant_scope
-        result = tenant_scope(
-            x_tenant_id="tenant-1",
-            x_api_key="key-1",
-            x_admin_key=None,
-            authorization=None,
-        )
-        assert result == "system" or "Tenant no encontrado"

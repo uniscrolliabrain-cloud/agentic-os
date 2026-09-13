@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from ...kernel.world.events import Event
 from .base import EventLogRepository
 from .jsonl import JsonlEventLog
+from ..supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,6 @@ class SupabaseEventLog(EventLogRepository):
         if self._client is not None:
             return self._client
         try:
-            from .supabase_client import get_supabase
             client = get_supabase()
             self._client = client.db
             return self._client

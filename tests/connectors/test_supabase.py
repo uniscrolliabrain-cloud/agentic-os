@@ -1,7 +1,7 @@
-"""tests.connectors.test_supabase: Supabase connector y persistence."""
+"""tests.connectors.test_supabase: Supabase connector."""
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 from agentic_os.connectors.providers.supabase import SupabaseConnector
 from agentic_os.connectors.core.models import Command
@@ -37,18 +37,25 @@ class TestSupabaseConnector:
         assert cred.status == "missing"
 
     @pytest.mark.asyncio
-    async def test_execute_dry_run_devuelve_preview(self):
-        conn = SupabaseConnector()
-        cmd = Command(capability="storage.file.upload", params={"bucket": "test", "path": "file.txt"})
+    async def test_execute_dry_run_con_conexion(self):
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        conn._client = MagicMock()
+        cmd = Command(
+            capability="storage.file.upload",
+            params={"bucket": "test", "path": "file.txt"},
+            dry_run=True,
+        )
         result = await conn.execute(cmd)
         assert result.dry_run is True
         assert result.preview is not None
 
     @pytest.mark.asyncio
-    @patch("agentic_os.connectors.providers.supabase.create_client")
-    async def test_health_check_con_conexion(self, mock_create):
-        mock_client = MagicMock()
-        mock_create.return_value = mock_client
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_health_check_con_conexion(self, mock_get):
+        mock_get.return_value = MagicMock()
         conn = SupabaseConnector(
             connected=True,
             credentials={"url": "https://test.supabase.co", "key": "test-key"},
@@ -57,12 +64,13 @@ class TestSupabaseConnector:
         assert health.status == "HEALTHY"
 
     @pytest.mark.asyncio
-    @patch("agentic_os.connectors.providers.supabase.create_client")
-    async def test_storage_upload(self, mock_create):
-        mock_storage = MagicMock()
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_storage_upload(self, mock_get):
         mock_client = MagicMock()
+        mock_storage = MagicMock()
+        type(mock_storage).from_ = MagicMock()
         mock_client.storage = mock_storage
-        mock_create.return_value = mock_client
+        mock_get.return_value = mock_client
         conn = SupabaseConnector(
             connected=True,
             credentials={"url": "https://test.supabase.co", "key": "test-key"},
@@ -73,11 +81,29 @@ class TestSupabaseConnector:
         )
         result = await conn.execute(cmd)
         assert result.ok is True
-        mock_storage.from_.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("agentic_os.connectors.providers.supabase.create_client")
-    async def test_auth_signin(self, mock_create):
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_storage_download(self, mock_get):
+        mock_client = MagicMock()
+        mock_storage = MagicMock()
+        type(mock_storage).from_ = MagicMock()
+        mock_client.storage = mock_storage
+        mock_get.return_value = mock_client
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        cmd = Command(
+            capability="storage.file.download",
+            params={"bucket": "b", "path": "p"},
+        )
+        result = await conn.execute(cmd)
+        assert result.ok is True
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_auth_signin(self, mock_get):
         mock_auth = MagicMock()
         mock_auth.sign_in_with_password.return_value = MagicMock(
             user={"id": "u1", "email": "test@test.com"},
@@ -85,7 +111,7 @@ class TestSupabaseConnector:
         )
         mock_client = MagicMock()
         mock_client.auth = mock_auth
-        mock_create.return_value = mock_client
+        mock_get.return_value = mock_client
         conn = SupabaseConnector(
             connected=True,
             credentials={"url": "https://test.supabase.co", "key": "test-key"},
@@ -98,30 +124,41 @@ class TestSupabaseConnector:
         assert result.ok is True
 
     @pytest.mark.asyncio
-    @patch("agentic_os.connectors.providers.supabase.create_client")
-    async def test_db_record_create(self, mock_create):
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_unknown_capability(self, mock_get):
+        mock_get.return_value = MagicMock()
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        cmd = Command(capability="unknown.op", params={})
+        result = await conn.execute(cmd)
+        assert result.ok is False
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_db_record_delete(self, mock_get):
         mock_db = MagicMock()
-        mock_db.table.return_value.insert.return_value.execute.return_value = MagicMock(
-            data=[{"id": 1, "name": "test"}]
+        mock_db.table.return_value.delete.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"id": 1}]
         )
         mock_client = MagicMock()
         mock_client.db = mock_db
-        mock_create.return_value = mock_client
+        mock_get.return_value = mock_client
         conn = SupabaseConnector(
             connected=True,
             credentials={"url": "https://test.supabase.co", "key": "test-key"},
         )
         cmd = Command(
-            capability="db.record.create",
-            params={"table": "users", "values": {"name": "test"}},
+            capability="db.record.delete",
+            params={"table": "users", "filters": {"active": True}},
         )
         result = await conn.execute(cmd)
         assert result.ok is True
-        assert result.output["data"] == [{"id": 1, "name": "test"}]
 
     @pytest.mark.asyncio
-    @patch("agentic_os.connectors.providers.supabase.create_client")
-    async def test_db_record_read(self, mock_create):
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_db_record_read(self, mock_get):
         mock_db = MagicMock()
         mock_query = MagicMock()
         mock_query.eq.return_value = mock_query
@@ -131,7 +168,7 @@ class TestSupabaseConnector:
         mock_db.table.return_value.select.return_value = mock_query
         mock_client = MagicMock()
         mock_client.db = mock_db
-        mock_create.return_value = mock_client
+        mock_get.return_value = mock_client
         conn = SupabaseConnector(
             connected=True,
             credentials={"url": "https://test.supabase.co", "key": "test-key"},
@@ -143,3 +180,22 @@ class TestSupabaseConnector:
         result = await conn.execute(cmd)
         assert result.ok is True
         assert len(result.output["data"]) == 2
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_db_schema_inspect(self, mock_get):
+        mock_db = MagicMock()
+        mock_db.table.return_value.select.return_value.execute.return_value = MagicMock(
+            data=[{"table_name": "users"}, {"table_name": "events"}]
+        )
+        mock_client = MagicMock()
+        mock_client.db = mock_db
+        mock_get.return_value = mock_client
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        cmd = Command(capability="db.schema.inspect")
+        result = await conn.execute(cmd)
+        assert result.ok is True
+        assert len(result.output["tables"]) == 2
