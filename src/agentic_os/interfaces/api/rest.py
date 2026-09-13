@@ -74,12 +74,25 @@ for d in (CONVERSATIONS_DIR, TENANTS_DATA_DIR, EVENTLOG_DIR, POLICIES_DIR):
 
 # ---------------------------------------------------------------- tenant ---
 # Resolución del tenant activo por CABECERA (X-Tenant-Id + X-Api-Key simple
-# guardada en TenantConfig.credentials), nunca por body.
-# TODO(auth): sustituir por OAuth/JWT real en una fase posterior; el mínimo de
-# esta fase es cerrar la fuga de datos entre tenants en las lecturas.
+# guardada en TenantConfig.credentials, o JWT RS256 de Supabase via
+# Authorization: Bearer). Nunca por body.
 _TENANT_HEADER = "X-Tenant-Id"
 _API_KEY_HEADER = "X-Api-Key"
 _ADMIN_KEY_HEADER = "X-Admin-Key"
+_AUTH_HEADER = "Authorization"
+
+
+def _verify_supabase_jwt(auth_header: Optional[str]) -> Optional[dict]:
+    """Verifica JWT RS256 de Supabase. Devuelve claims o None."""
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:]
+    try:
+        from ...infrastructure.auth.jwt_verifier import get_verifier
+        claims = get_verifier().verify(token)
+        return claims.model_dump()
+    except Exception:
+        return None
 
 # tenant virtual por defecto para peticiones anónimas (back-compat en dev)
 _DEFAULT_SCOPE = "system"
@@ -89,13 +102,24 @@ def tenant_scope(
     x_tenant_id: Optional[str] = Header(default=None, alias=_TENANT_HEADER),
     x_api_key: Optional[str] = Header(default=None, alias=_API_KEY_HEADER),
     x_admin_key: Optional[str] = Header(default=None, alias=_ADMIN_KEY_HEADER),
+    authorization: Optional[str] = Header(default=None, alias=_AUTH_HEADER),
 ) -> str:
     """Dependency: resuelve y valida el tenant de la petición.
 
-    Sin cabecera -> scope "system" (peticiones anónimas solo ven datos del
-    tenant virtual por defecto). Con X-Tenant-Id: el tenant debe existir y
-    estar autenticado (vía X-Api-Key del tenant o X-Admin-Key global).
+    Prioridades (fail-closed):
+      1. Authorization: Bearer <JWT Supabase> → verifica JWT, extrae tenant_id
+      2. X-Tenant-Id + X-Api-Key (legacy)
+      3. Sin cabecera -> scope "system" (anon)
     """
+    claims = _verify_supabase_jwt(authorization)
+    if claims:
+        tenant_id = claims.get("tenant_id") or claims.get("user_metadata", {}).get("tenant_id")
+        if tenant_id:
+            tenant = _tenant_registry.get(str(tenant_id))
+            if tenant is not None:
+                return tenant.id
+        return str(tenant_id or _DEFAULT_SCOPE) if tenant_id else _DEFAULT_SCOPE
+
     if not x_tenant_id:
         return _DEFAULT_SCOPE
     tenant = _tenant_registry.get(x_tenant_id)
