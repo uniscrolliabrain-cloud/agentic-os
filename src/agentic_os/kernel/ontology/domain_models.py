@@ -94,33 +94,11 @@ class BaseDomainModel(BaseModel):
 DomainEntity = BaseDomainModel
 
 
-class EntityRef(KernelModel):
-    """Identidad referenciable de una entidad del kernel."""
-
-    tenant_id: str
-    entity_id: str
-    entity_type: str
-
-    @field_validator("tenant_id")
-    @classmethod
-    def _tenant_id_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("tenant_id es obligatorio (invariante multi-tenant)")
-        return v
-
-    @field_validator("entity_id")
-    @classmethod
-    def _entity_id_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("entity_id es obligatorio")
-        return v
-
-    @field_validator("entity_type")
-    @classmethod
-    def _entity_type_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("entity_type es obligatorio (discriminador)")
-        return v
+# EntityRef vive en ``entities.py`` (fuente unica de verdad) y se re-exporta
+# aqui por compatibilidad. NO duplicar la clase: dos EntityRef con el mismo
+# nombre hacen que ``Entity.ref`` (tipado con la de entities) rechace las
+# instancias construidas con la de domain_models (pydantic: model_type).
+from .entities import EntityRef  # noqa: E402  (re-export canonico)
 
 
 # --- A2: Lead y Proposal ---
@@ -238,11 +216,11 @@ class Appointment(BaseDomainModel):
 
 
 # --- A5: Registro de tipos de entidad ---
-# NOTA (FASE 1 bor-agencia): los dominios registran sus entidades ELLOS MISMOS
-# al importarse (ver domains/agencia/__init__.py). El kernel NO importa dominios:
-# hacerlo rompe la carga (domains.base necesita kernel.ontology completo y
-# kernel/ontology/entities.py necesita domain_models -> ciclo). Layering: los
-# dominios dependen del kernel, nunca al reves.
+# El kernel solo registra sus 9 tipos core. Los dominios registran los suyos
+# de forma EXPLICITA en bootstrap (register_entity_types / AgenciaDomain.
+# register_entities), NUNCA como side-effect en import: el registro queda
+# congelado tras validate_registry_integrity() y mutar aqui rompe tests que
+# asumen el registro core (ver docs/INVARIANTS.md).
 ENTITY_TYPE_REGISTRY: dict[str, type[BaseDomainModel]] = {
     cls.model_fields["kind"].default: cls
     for cls in (
@@ -250,6 +228,37 @@ ENTITY_TYPE_REGISTRY: dict[str, type[BaseDomainModel]] = {
         BlogPost, CoachingClient, SessionNote, TherapyClient, Appointment,
     )
 }
+
+
+def register_entity_types(
+    *classes: type[BaseDomainModel],
+    registry: dict[str, type[BaseDomainModel]] | None = None,
+) -> None:
+    """Registra clases de entidad de dominio de forma EXPLICITA (bootstrap).
+
+    Camino canonico para dominios (ver docs/spec/01_ONTOLOGY.md): el dominio
+    compila su ontologia y despues registra sus clases aqui. Fail-closed:
+    - rechaza clases sin kind (Literal con default);
+    - rechaza sobrescribir un kind ya registrado por OTRA clase.
+    Es idempotente si la clase ya estaba registrada.
+    """
+    target = ENTITY_TYPE_REGISTRY if registry is None else registry
+    for cls in classes:
+        kind_field = cls.model_fields.get("kind")
+        kind = getattr(kind_field, "default", None) if kind_field else None
+        if not kind:
+            raise ValueError(
+                f"{cls.__name__} no declara kind Literal con default; "
+                "no puede registrarse en ENTITY_TYPE_REGISTRY"
+            )
+        existing = target.get(kind)
+        if existing is not None and existing is not cls:
+            raise ValueError(
+                f"kind '{kind}' ya registrado por {existing.__name__}; "
+                f"no se sobrescribe con {cls.__name__}"
+            )
+        target[kind] = cls
+
 
 
 class UnknownEntityTypeError(KeyError):

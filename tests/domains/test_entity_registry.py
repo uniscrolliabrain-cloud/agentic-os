@@ -1,7 +1,9 @@
-"""Test A5 — ENTITY_TYPE_REGISTRY.
+"""Test A5 — ENTITY_TYPE_REGISTRY (core del kernel).
 
-Valida:
-- Registro contiene los 9 tipos de entidad.
+Valida los 9 tipos CORE del registro (independiente de dominios: los
+dominios registran explícitamente vía AgenciaDomain.register_entities(),
+nunca en import, así que este suite es determinista en cualquier orden):
+- Registro contiene los 9 tipos core de entidad.
 - entity_from_payload crea la instancia correcta.
 - Kind desconocido -> UnknownEntityTypeError (fail-closed).
 - Payload invalido -> ValidationError.
@@ -26,24 +28,29 @@ from agentic_os.kernel.ontology.domain_models import (
     validate_registry_integrity,
 )
 
+# Tipos CORE del kernel (los dominios añaden los suyos en bootstrap).
+CORE_REGISTRY = {
+    "marketing.lead": Lead,
+    "marketing.proposal": Proposal,
+    "marketing.brand": Brand,
+    "marketing.campaign": Campaign,
+    "content.blog_post": BlogPost,
+    "coaching.client": CoachingClient,
+    "coaching.session_note": SessionNote,
+    "therapy.client": TherapyClient,
+    "therapy.appointment": Appointment,
+}
+
 
 def test_registry_contains_9_types():
-    assert len(ENTITY_TYPE_REGISTRY) == 9
+    assert len(CORE_REGISTRY) == 9
+    for kind in CORE_REGISTRY:
+        assert kind in ENTITY_TYPE_REGISTRY
 
 
 def test_registry_kinds_are_canonical():
-    expected = {
-        "marketing.lead": Lead,
-        "marketing.proposal": Proposal,
-        "marketing.brand": Brand,
-        "marketing.campaign": Campaign,
-        "content.blog_post": BlogPost,
-        "coaching.client": CoachingClient,
-        "coaching.session_note": SessionNote,
-        "therapy.client": TherapyClient,
-        "therapy.appointment": Appointment,
-    }
-    assert ENTITY_TYPE_REGISTRY == expected
+    for kind, cls in CORE_REGISTRY.items():
+        assert ENTITY_TYPE_REGISTRY.get(kind) is cls
 
 
 def test_registry_integrity_passes():

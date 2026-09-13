@@ -68,3 +68,12 @@ class Entity(KernelModel, Generic[T]):
     def id(self) -> str:
         return self.ref.entity_id
 
+    @property
+    def kind(self) -> str:
+        """Discriminador de tipo (delegado en ref.entity_type).
+
+        `OntologyValidator.validate_entity` y los tests de contratos usan
+        `e.kind`; mantenerlo como property evita duplicar el campo.
+        """
+        return self.ref.entity_type
+
