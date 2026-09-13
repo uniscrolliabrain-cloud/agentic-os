@@ -85,6 +85,22 @@ class TenantConfigPublic(BaseModel):
 
     @classmethod
     def from_config(cls, config: TenantConfig) -> "TenantConfigPublic":
+        # Credenciales por cliente final: el dict `credentials` puede contener
+        # la clave "clients" (dict client_id -> providers -> secretos) además
+        # de providers globales. Ni "clients" ni "api_key" son providers, así
+        # que se excluyen para no filtrar información interna por la API.
+        clients = config.credentials.get("clients") or {}
+        scoped: set[str] = set()
+        if isinstance(clients, dict):
+            for entry in clients.values():
+                providers = entry.get("providers") if isinstance(entry, dict) else None
+                if isinstance(providers, dict):
+                    scoped.update(k for k in providers.keys() if isinstance(k, str))
+        global_providers = {
+            k
+            for k in config.credentials.keys()
+            if k not in ("api_key", "clients")
+        }
         return cls(
             name=config.name,
             domain=config.domain,
@@ -92,7 +108,7 @@ class TenantConfigPublic(BaseModel):
             primary_color=config.primary_color,
             data_dir=config.data_dir,
             enabled_capabilities=list(config.enabled_capabilities),
-            connected_providers=sorted(config.credentials.keys()),
+            connected_providers=sorted(global_providers | scoped),
         )
 
 

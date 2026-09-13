@@ -238,10 +238,17 @@ class Appointment(BaseDomainModel):
 
 
 # --- A5: Registro de tipos de entidad ---
-
+# NOTA (FASE 1 bor-agencia): los dominios registran sus entidades ELLOS MISMOS
+# al importarse (ver domains/agencia/__init__.py). El kernel NO importa dominios:
+# hacerlo rompe la carga (domains.base necesita kernel.ontology completo y
+# kernel/ontology/entities.py necesita domain_models -> ciclo). Layering: los
+# dominios dependen del kernel, nunca al reves.
 ENTITY_TYPE_REGISTRY: dict[str, type[BaseDomainModel]] = {
     cls.model_fields["kind"].default: cls
-    for cls in (Lead, Proposal, Brand, Campaign, BlogPost, CoachingClient, SessionNote, TherapyClient, Appointment)
+    for cls in (
+        Lead, Proposal, Brand, Campaign,
+        BlogPost, CoachingClient, SessionNote, TherapyClient, Appointment,
+    )
 }
 
 
