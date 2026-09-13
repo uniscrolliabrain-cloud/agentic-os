@@ -1,5 +1,16 @@
 ﻿version: '3.8'
 services:
+  supabase:
+    image: supabase/postgres:15
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - supabase_data:/var/lib/postgresql/data
+
   postgres:
     image: postgres:15
     environment:
@@ -47,3 +58,4 @@ services:
 
 volumes:
   pgdata:
+  supabase_data:
