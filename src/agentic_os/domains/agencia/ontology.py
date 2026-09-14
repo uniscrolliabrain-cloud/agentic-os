@@ -7,10 +7,18 @@ Extiende el vocabulario del kernel con los kinds *de dominio* (namespace
 """
 from __future__ import annotations
 
-from typing import Set
+from typing import Dict, Set
 
 from ..base import BaseDomain
-from .entities import AGENCIA_ENTITY_KINDS
+from .entities import (
+    AgencyAppointment,
+    AgencyClient,
+    AgencyDeal,
+    AgencyLead,
+    AGENCIA_ENTITY_KINDS,
+    AuditReport,
+    ServiceQuote,
+)
 
 
 class AgenciaDomain(BaseDomain):
@@ -29,6 +37,32 @@ class AgenciaDomain(BaseDomain):
         "agencia.schedule",
         "agencia.quote_service",
     }
+
+    @classmethod
+    def register_entities(
+        cls,
+        registry: Dict[str, type] | None = None,
+    ) -> None:
+        """Registra las entidades del dominio en ENTITY_TYPE_REGISTRY.
+
+        Camino canónico (docs/spec/01_ONTOLOGY.md, docs/INVARIANTS.md):
+        primero compila la ontología fail-closed contra el metamodelo y
+        después registra vía ``register_entity_types``. NUNCA como
+        side-effect en import: el registro es una operación explícita de
+        bootstrap, idempotente y fail-closed ante colisiones de kind.
+        """
+        from ...kernel.ontology.domain_models import register_entity_types
+
+        cls.compile_ontology()  # fail-closed: vocabulario válido o no se registra
+        register_entity_types(
+            AgencyClient,
+            AgencyLead,
+            AgencyAppointment,
+            AgencyDeal,
+            ServiceQuote,
+            AuditReport,
+            registry=registry,
+        )
 
 
 __all__ = ["AgenciaDomain"]

@@ -79,7 +79,7 @@ def test_resolve_returns_copy_and_none_when_missing() -> None:
     assert resolve_client_credentials(tenant, "", "google") is None
 
 
-def test_agencia_kinds_registered_and_integrity() -> None:
+def test_agencia_kinds_registered_and_integrity(agencia_registered) -> None:
     assert AGENCIA_ENTITY_KINDS == {
         "agencia.client",
         "agencia.lead",
@@ -90,7 +90,25 @@ def test_agencia_kinds_registered_and_integrity() -> None:
     }
     for kind in AGENCIA_ENTITY_KINDS:
         assert kind in ENTITY_TYPE_REGISTRY
+    # La integridad se valida DESPUÉS de compilar la ontología con el
+    # dominio y registrar sus entidades (camino canónico).
     validate_registry_integrity()
+
+
+@pytest.fixture()
+def agencia_registered():
+    """Bootstrap explícito del dominio: compilar + registrar, y limpiar después.
+
+    El registro del dominio NO ocurre en import (invariante del kernel): cada
+    test que necesita las entidades agencia las registra aquí y restaura el
+    registro core al terminar, para no contaminar otros suites.
+    """
+    from agentic_os.domains.agencia import AgenciaDomain
+
+    AgenciaDomain.register_entities()
+    yield
+    for kind in AGENCIA_ENTITY_KINDS:
+        ENTITY_TYPE_REGISTRY.pop(kind, None)
 
 
 def test_agency_lead_strict_and_forbids_extra() -> None:

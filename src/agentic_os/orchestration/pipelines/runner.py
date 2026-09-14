@@ -1,8 +1,17 @@
+"""PipelineRunner: unico camino canonico para ejecutar pipelines.
+
+Pipeline -> MicroAction (`runner.tool()`) -> Executor (Policy + auditoria)
+-> Tool -> EventLog. Los pipelines se registran via `@register` en el
+paquete (`PIPELINES`) y el runner los despacha por `pipeline_id`.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
 from ...infrastructure.idempotency import IdempotencyStore
+from ...kernel.world.events import Event
+
 
 class PipelineStepError(Exception):
     def __init__(self, tool_name: str, error: str):
@@ -10,10 +19,12 @@ class PipelineStepError(Exception):
         self.tool_name = tool_name
         self.error = error
 
+
 class UnknownPipelineError(Exception):
     def __init__(self, pipeline_id: str):
         super().__init__(f"pipeline desconocido: {pipeline_id}")
         self.pipeline_id = pipeline_id
+
 
 class PipelineRunner:
     def __init__(self, executor: Any, llm: Any = None):
@@ -49,28 +60,13 @@ class PipelineRunner:
             return output
         return {"data": output}
 
-    def _run_impl(
-        self,
-        tenant_id: str,
-        command_id: Optional[str],
-        correlation_id: Optional[str],
-        pipeline_id: str = "default",
-        **kwargs,
-    ) -> Dict[str, Any]:
-        result = {"status": "OK", "pipeline_id": pipeline_id, "tenant_id": tenant_id}
-        if command_id:
-            try:
-                self.idempotency.save(tenant_id or "system", f"pipeline:{command_id}", result)
-            except Exception:
-                pass
-        return result
-
     def run(
         self,
+        pipeline_id: str,
         tenant_id: str = None,
-        command_id: str = None,
-        correlation_id: str = None,
-        **kwargs,
+        params: Optional[Dict[str, Any]] = None,
+        correlation_id: Optional[str] = None,
+        command_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         tid = tenant_id or "system"
         if command_id:
@@ -80,4 +76,115 @@ class PipelineRunner:
                     return cached
             except Exception:
                 pass
-        return self._run_impl(tid, command_id, correlation_id, **kwargs)
+        return self._run_impl(pipeline_id, tid, params, correlation_id, command_id)
+
+    def _run_impl(
+        self,
+        pipeline_id: str,
+        tenant_id: str,
+        params: Optional[Dict[str, Any]] = None,
+        correlation_id: Optional[str] = None,
+        command_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        # Import diferido: los modulos de pipeline se registran via @register
+        # al importar el paquete (ver pipelines/__init__.py).
+        from . import PIPELINES
+
+        pipeline = PIPELINES.get(pipeline_id)
+        if pipeline is None:
+            raise UnknownPipelineError(pipeline_id)
+
+        self._audit(
+            "PipelineStarted",
+            pipeline_id,
+            tenant_id,
+            correlation_id,
+            command_id,
+            {"pipeline_id": pipeline_id},
+        )
+
+        try:
+            result = pipeline(self, tenant_id, params or {}, correlation_id)
+
+            self._audit(
+                "PipelineCompleted",
+                pipeline_id,
+                tenant_id,
+                correlation_id,
+                command_id,
+                {"pipeline_id": pipeline_id, "status": result.get("status")},
+            )
+
+            if command_id:
+                try:
+                    self.idempotency.save(tenant_id, f"pipeline:{command_id}", result)
+                except Exception:
+                    pass
+
+            return result
+        except Exception as error:
+            self._audit(
+                "PipelineFailed",
+                pipeline_id,
+                tenant_id,
+                correlation_id,
+                command_id,
+                {"pipeline_id": pipeline_id, "error": str(error)[:300]},
+            )
+            raise
+
+    def emit_event(
+        self,
+        kind: str,
+        entity_id: str,
+        tenant_id: str,
+        payload: Dict[str, Any],
+        correlation_id: Optional[str] = None,
+        command_id: Optional[str] = None,
+    ) -> None:
+        """Emite un evento de dominio al EventLog (A9: entidades tipadas).
+
+        Mismo camino canonico que `_audit`: Event pydantic -> event_log del
+        Executor. Sin event_log es no-op (mismo contrato que _audit).
+        """
+        event_log = getattr(self.executor, "event_log", None)
+        if event_log is None:
+            return
+
+        event_log.append(
+            Event(
+                kind=kind,
+                entity_id=entity_id,
+                tenant_id=tenant_id,
+                actor_id="pipeline_runner",
+                payload=payload,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+        )
+
+    def _audit(
+        self,
+        kind: str,
+        entity_id: str,
+        tenant_id: str,
+        correlation_id: Optional[str],
+        command_id: Optional[str],
+        payload: Dict[str, Any],
+    ) -> None:
+        event_log = getattr(self.executor, "event_log", None)
+        if event_log is None:
+            return
+
+        event_log.append(
+            Event(
+                kind=kind,
+                entity_id=entity_id,
+                tenant_id=tenant_id,
+                actor_id="pipeline_runner",
+                payload=payload,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+        )
+
