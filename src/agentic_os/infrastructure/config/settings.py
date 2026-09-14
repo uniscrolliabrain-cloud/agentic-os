@@ -74,8 +74,10 @@ class Settings(BaseSettings):
     wordpress_app_password: Optional[str] = Field(default=None, alias="WORDPRESS_APP_PASSWORD")
     wordpress_site_url: Optional[str] = Field(default=None, alias="WORDPRESS_SITE_URL")
     supabase_url: Optional[str] = Field(default=None, alias="SUPABASE_URL")
+    supabase_project_url: Optional[str] = Field(default=None, alias="SUPABASE_PROJECT_URL")
     supabase_key: Optional[str] = Field(default=None, alias="SUPABASE_KEY")
     supabase_service_role_key: Optional[str] = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_dsn: Optional[str] = Field(default=None, alias="SUPABASE_DSN")
     postgres_dsn: Optional[str] = Field(default=None, alias="POSTGRES_DSN")
     redis_url: Optional[str] = Field(default=None, alias="REDIS_URL")
     vercel_token: Optional[str] = Field(default=None, alias="VERCEL_TOKEN")
@@ -97,6 +99,16 @@ class Settings(BaseSettings):
     jira_email: Optional[str] = Field(default=None, alias="JIRA_EMAIL")
     connector_cred_dir: Optional[str] = Field(default="./data/creds", alias="CONNECTOR_CRED_DIR")
     credential_encryption_key: Optional[str] = Field(default=None, alias="CREDENTIAL_ENCRYPTION_KEY")
+
+    # --- JWT Authentication (patrón GOOGLE_REAL) ---
+    # JWT_REAL=true → usa JWT_SECRET real para firmar/verificar tokens.
+    # JWT_REAL=false (default) → modo SIMULADO: usa un secret por defecto
+    # (no seguro, solo dev/test) pero la misma interfaz. Fail-safe: sin
+    # JWT_SECRET configurado, siempre SIMULADO.
+    jwt_real: bool = Field(default=False, alias="JWT_REAL")
+    jwt_secret: Optional[str] = Field(default=None, alias="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_expiry_minutes: int = Field(default=60, alias="JWT_EXPIRY_MINUTES")
 
     def model_post_init(self, __context: Any) -> None:
         # Ver docs/PRE_PRODUCTION_CHECKLIST.md #1: fail-closed solo en
