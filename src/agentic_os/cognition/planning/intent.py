@@ -1,22 +1,46 @@
 from __future__ import annotations
-from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ...kernel.types.ids import new_id
 
+class IntentKind(str, Enum):
+    REPLY_TO_USER = "reply_to_user"
+    SEND_EMAIL = "send_email"
+    SEND_SLACK = "send_slack"
+    SEND_WHATSAPP = "send_whatsapp"
+    CREATE_EVENT = "create_event"
+    SEARCH_WEB = "search_web"
+    EXTRACT_PAGE = "extract_page"
+    CREATE_DOCUMENT = "create_document"
+    SCHEDULE_JOB = "schedule_job"
+    PUBLISH_POST = "publish_post"
+    READ_FILE = "read_file"
+    CUSTOM = "custom"
 
 class Intent(BaseModel):
-    """
-    Lo que un rol con permiso 'propose_intent' (ej. Gemini como 'director')
-    propone que ocurra. NO es una acción ejecutada: todavía tiene que pasar
-    por el policy engine (policy/evaluator.py) antes de convertirse en un
-    Event real dentro del world log.
-    """
-    model_config = ConfigDict(frozen=True)
+    """Propuesta del LLM/Proposer. NUNCA es una accion ejecutada. Pasa por Policy."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     id: str = Field(default_factory=new_id)
-    goal: str  # qué quiere lograr, en una frase (ej. "responder al usuario", "crear una cita")
-    kind: str  # tipo de acción propuesta, ej. "send_email", "create_appointment", "reply_to_user"
-    entity_id: str = "n/a"  # sobre qué entidad actúa, si aplica
-    payload: str = ""  # detalles adicionales en texto libre por ahora (se estructurará más adelante)
-    rationale: str = ""  # por qué Gemini propone esto — queda en el log, auditable
-    reply_to_user: Optional[str] = None  # texto en lenguaje natural para mostrar en el chat
-    confidence: Optional[float] = None
+    goal: str = Field(description="que quiere lograr en una frase")
+    kind: IntentKind = IntentKind.REPLY_TO_USER
+    entity_id: str = Field(default="n/a")
+    payload: Dict[str, Any] = Field(default_factory=dict, description="parametros estructurados, no string libre")
+    rationale: str = Field(default="", description="por que se propone, auditable")
+    reply_to_user: Optional[str] = None
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    requires_approval: bool = Field(default=False)
+    risk_level: str = Field(default="low", description="low|medium|high")
+    source_belief_ids: List[str] = Field(default_factory=list)
+
+    @field_validator("goal")
+    @classmethod
+    def _goal_nonblank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Intent.goal obligatorio")
+        return v.strip()
+
+    def is_safe_to_auto_execute(self) -> bool:
+        return not self.requires_approval and self.risk_level == "low" and self.kind == IntentKind.REPLY_TO_USER

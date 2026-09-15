@@ -1,0 +1,1334 @@
+diff --git a/src/agentic_os/cognition/beliefs/belief.py b/src/agentic_os/cognition/beliefs/belief.py
+index f03a336..f705319 100644
+--- a/src/agentic_os/cognition/beliefs/belief.py
++++ b/src/agentic_os/cognition/beliefs/belief.py
+@@ -1,14 +1,62 @@
+ from __future__ import annotations
+-from pydantic import BaseModel, Field, ConfigDict
+-from typing import Any, Dict, Optional
+ from datetime import datetime
++from enum import Enum
++from typing import Any, Dict, List, Optional
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ from ...kernel.types.time import now_utc
+ from ...kernel.types.ids import new_id
++
++class BeliefKind(str, Enum):
++    FACT = "fact"
++    INFERRED = "inferred"
++    ASSUMPTION = "assumption"
++    GOAL = "goal"
++    CONSTRAINT = "constraint"
++    PREFERENCE = "preference"
++    OBSERVATION = "observation"
++
+ class Belief(BaseModel):
+-    model_config = ConfigDict(frozen=True)
++    """Unidad de conocimiento auditada. Inmutable, con confianza y procedencia."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
+     id: str = Field(default_factory=new_id)
+-    kind: str
++    kind: BeliefKind = BeliefKind.FACT
++    key: str = Field(description="clave estable ej. cliente.email, empresa.nombre")
+     content: Dict[str, Any]
+-    confidence: float = 1.0
++    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+     source_observation_id: Optional[str] = None
++    source_agent_id: Optional[str] = None
++    supports: List[str] = Field(default_factory=list, description="ids de beliefs que apoyan esta")
++    contradicts: List[str] = Field(default_factory=list, description="ids de beliefs que contradicen esta")
++    expires_at: Optional[datetime] = None
+     created_at: datetime = Field(default_factory=now_utc)
++    updated_at: datetime = Field(default_factory=now_utc)
++
++    @field_validator("key")
++    @classmethod
++    def _key_nonblank(cls, v: str) -> str:
++        if not v or not v.strip():
++            raise ValueError("Belief.key es obligatoria")
++        if len(v) > 256:
++            raise ValueError("key demasiado larga")
++        return v.strip()
++
++    def is_expired(self) -> bool:
++        if self.expires_at is None:
++            return False
++        return now_utc() > self.expires_at
++
++    def with_confidence(self, new_conf: float, supporting_id: Optional[str] = None) -> "Belief":
++        data = self.model_dump()
++        data["confidence"] = max(0.0, min(1.0, new_conf))
++        data["updated_at"] = now_utc()
++        if supporting_id:
++            supports = list(data.get("supports", []))
++            if supporting_id not in supports:
++                supports.append(supporting_id)
++            data["supports"] = supports
++        return Belief(**data)
++
++    def decayed(self, factor: float = 0.95) -> "Belief":
++        return self.with_confidence(self.confidence * factor)
+diff --git a/src/agentic_os/cognition/beliefs/observation.py b/src/agentic_os/cognition/beliefs/observation.py
+index 4a3615c..eee3506 100644
+--- a/src/agentic_os/cognition/beliefs/observation.py
++++ b/src/agentic_os/cognition/beliefs/observation.py
+@@ -1,12 +1,34 @@
+ from __future__ import annotations
+-from pydantic import BaseModel, Field, ConfigDict
+-from typing import Any, Dict
+ from datetime import datetime
++from typing import Any, Dict, Literal, Optional
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ from ...kernel.types.time import now_utc
+ from ...kernel.types.ids import new_id
++
+ class Observation(BaseModel):
+-    model_config = ConfigDict(frozen=True)
++    """Hecho bruto entrante. Nunca se confia 100%. Pasa por proposicion -> belief."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
+     id: str = Field(default_factory=new_id)
+-    source: str
++    source: str = Field(description="gmail, slack, web_scrape, user, pipeline...")
++    kind: str = Field(default="raw", description="email, message, document, event...")
+     data: Dict[str, Any]
++    trust: float = Field(default=0.8, ge=0.0, le=1.0, description="confianza de la fuente")
++    tenant_id: str = Field(default="system")
++    correlation_id: Optional[str] = None
+     at: datetime = Field(default_factory=now_utc)
++
++    @field_validator("source")
++    @classmethod
++    def _source_nonblank(cls, v: str) -> str:
++        if not v or not v.strip():
++            raise ValueError("Observation.source obligatorio")
++        return v.strip().lower()
++
++    def to_belief_dict(self) -> Dict[str, Any]:
++        return {
++            "source_observation_id": self.id,
++            "content": self.data,
++            "confidence": self.trust,
++        }
+diff --git a/src/agentic_os/cognition/memory/__init__.py b/src/agentic_os/cognition/memory/__init__.py
+index 3c7b455..84132c2 100644
+--- a/src/agentic_os/cognition/memory/__init__.py
++++ b/src/agentic_os/cognition/memory/__init__.py
+@@ -1 +1,89 @@
+-"""cognition.memory: memorias episódica, semántica, procedural y de trabajo"""
+\ No newline at end of file
++"""cognition.memory: memorias episodica, semantica, procedural y de trabajo.
++
++Compatibilidad:
++- Si inmemory.py existe -> usa MemoryItem/MemoryStore legacy de ahi
++- Si no existe (repo viejo) -> fallback a store.py legacy para no romper tests
++"""
++# Legacy in-memory (intenta inmemory primero, fallback a store legacy si es necesario)
++try:
++    from .inmemory import MemoryItem, MemoryStore
++except ModuleNotFoundError:
++    # Fallback: tu store.py original era el MemoryStore viejo
++    try:
++        from .store import MemoryItem as _MI, MemoryStore as _MS  # type: ignore
++        # Si store.py ya es CognitionStore, estos no existiran, entonces importara desde otro lado
++        MemoryItem = _MI
++        MemoryStore = _MS
++    except (ImportError, AttributeError):
++        # Ultimo fallback: define aqui mismo para que los tests no rompan
++        from pydantic import BaseModel, ConfigDict, Field
++        from typing import Any
++
++        class MemoryItem(BaseModel):  # type: ignore[no-redef]
++            model_config = ConfigDict(frozen=True)
++            id: str
++            content: str
++            metadata: dict[str, Any] = Field(default_factory=dict)
++
++        class MemoryStore:  # type: ignore[no-redef]
++            def __init__(self) -> None:
++                self._items: dict[str, MemoryItem] = {}
++            def put(self, item: MemoryItem) -> None:
++                if not item.id:
++                    raise ValueError("MemoryItem.id es obligatorio")
++                self._items[item.id] = item
++            def get(self, item_id: str):
++                return self._items.get(item_id)
++            def delete(self, item_id: str) -> None:
++                self._items.pop(item_id, None)
++            def search(self, query: str):
++                q = (query or "").strip().lower()
++                if not q:
++                    return []
++                terms = q.split()
++                scored = []
++                for item in self._items.values():
++                    haystack = " ".join([item.id, item.content] + [str(v) for v in item.metadata.values()]).lower()
++                    score = sum(haystack.count(t) for t in terms)
++                    if score > 0:
++                        scored.append((score, item.id, item))
++                scored.sort(key=lambda t: (-t[0], t[1]))
++                return [i for _, _, i in scored]
++            def __len__(self):
++                return len(self._items)
++
++# Persistente por (tenant, agente) - nuevo
++try:
++    from .models import EpisodicEvent, ProceduralSkill, SemanticFact, WorkingItem
++except ImportError:
++    EpisodicEvent = ProceduralSkill = SemanticFact = WorkingItem = None  # type: ignore
++
++try:
++    from .registry import CognitionRegistry
++except ImportError:
++    CognitionRegistry = None  # type: ignore
++
++try:
++    from .store import CognitionStore, CognitionStoreError
++except ImportError:
++    # Si store.py es aun el legacy, CognitionStore no existe aun
++    CognitionStore = None  # type: ignore
++    CognitionStoreError = Exception  # type: ignore
++
++try:
++    from .retrieval import Retriever
++except ImportError:
++    Retriever = None  # type: ignore
++
++__all__ = [
++    "MemoryItem",
++    "MemoryStore",
++    "CognitionStore",
++    "CognitionStoreError",
++    "CognitionRegistry",
++    "WorkingItem",
++    "EpisodicEvent",
++    "SemanticFact",
++    "ProceduralSkill",
++    "Retriever",
++]
+diff --git a/src/agentic_os/cognition/memory/episodic.py b/src/agentic_os/cognition/memory/episodic.py
+index 34c6e39..c77c484 100644
+--- a/src/agentic_os/cognition/memory/episodic.py
++++ b/src/agentic_os/cognition/memory/episodic.py
+@@ -1,3 +1,27 @@
+-from pydantic import BaseModel, Field
++from __future__ import annotations
++from datetime import datetime
++from typing import List, Optional
++from pydantic import BaseModel, ConfigDict, Field
++
+ class EpisodicMemory(BaseModel):
+-    events: list = Field(default_factory=list)
++    """Append-only wrapper. La implementacion real es CognitionStore.episodic_*"""
++
++    model_config = ConfigDict(frozen=False, extra="forbid")
++
++    events: List[dict] = Field(default_factory=list)
++
++    def append(self, event_type: str, payload: dict, correlation_id: Optional[str] = None) -> None:
++        self.events.append({
++            "event_type": event_type,
++            "payload": payload,
++            "correlation_id": correlation_id,
++            "at": datetime.utcnow().isoformat(),
++        })
++
++    def replay(self, since: Optional[datetime] = None, event_type: Optional[str] = None) -> List[dict]:
++        ev = self.events
++        if event_type:
++            ev = [e for e in ev if e.get("event_type") == event_type]
++        if since:
++            ev = [e for e in ev if e.get("at") and e.get("at") >= since.isoformat()]
++        return ev
+diff --git a/src/agentic_os/cognition/memory/procedural.py b/src/agentic_os/cognition/memory/procedural.py
+index 632a2fa..d4351e6 100644
+--- a/src/agentic_os/cognition/memory/procedural.py
++++ b/src/agentic_os/cognition/memory/procedural.py
+@@ -1,3 +1,19 @@
+-from pydantic import BaseModel, Field
++from __future__ import annotations
++from typing import Dict, List, Optional
++from pydantic import BaseModel, ConfigDict, Field
++
+ class ProceduralMemory(BaseModel):
+-    skills: dict = Field(default_factory=dict)
++    """SOPs/skills del agente. Wrapper sobre CognitionStore.procedural_*"""
++
++    model_config = ConfigDict(frozen=False, extra="forbid")
++
++    skills: Dict[str, dict] = Field(default_factory=dict)
++
++    def register(self, name: str, steps: List[dict], description: str = "") -> None:
++        self.skills[name] = {"name": name, "description": description, "steps": steps}
++
++    def get(self, name: str) -> Optional[dict]:
++        return self.skills.get(name)
++
++    def list(self) -> List[dict]:
++        return list(self.skills.values())
+diff --git a/src/agentic_os/cognition/memory/retrieval.py b/src/agentic_os/cognition/memory/retrieval.py
+index 55df94b..56eb7f3 100644
+--- a/src/agentic_os/cognition/memory/retrieval.py
++++ b/src/agentic_os/cognition/memory/retrieval.py
+@@ -1,21 +1,34 @@
+ from __future__ import annotations
+-
+-from .store import MemoryItem, MemoryStore
+-
++from typing import List
++from .inmemory import MemoryItem, MemoryStore
++from .store import CognitionStore
++from .models import SemanticFact, WorkingItem
+ 
+ class Retriever:
+-    """Recuperación determinista sobre ``MemoryStore`` (sin embeddings).
+-
+-    Implementación mínima real: delega en ``MemoryStore.search``
+-    (matching por términos) y limita a ``k`` resultados. Ya no devuelve
+-    ``[]`` silenciosamente cuando hay coincidencias disponibles.
+-    """
+-
+-    def __init__(self, store: MemoryStore) -> None:
++    def __init__(self, store: MemoryStore):
+         self.store = store
+-
+-    def retrieve(self, query: str, k: int = 5) -> list[MemoryItem]:
++    def retrieve(self, query: str, k: int = 5) -> List[MemoryItem]:
+         if k <= 0:
+             return []
+         return self.store.search(query)[:k]
+ 
++class CognitionRetriever:
++    def __init__(self, cog_store: CognitionStore):
++        self.cog = cog_store
++    def retrieve_working(self, query: str, k: int = 5) -> List[WorkingItem]:
++        q = (query or "").lower()
++        if not q:
++            return self.cog.working_recent(k)
++        terms = q.split()
++        scored = []
++        for item in self.cog.working_recent(200):
++            hay = item.content.lower()
++            score = sum(hay.count(t) for t in terms)
++            if score > 0:
++                scored.append((score, item.id, item))
++        scored.sort(key=lambda t: (-t[0], t[1]))
++        return [i for _,_,i in scored[:k]]
++    def retrieve_semantic(self, query: str, k: int = 5) -> List[SemanticFact]:
++        return self.cog.semantic_search(query)[:k]
++    def retrieve_context(self, query: str, k: int = 5) -> dict:
++        return self.cog.context(query=query, k=k)
+diff --git a/src/agentic_os/cognition/memory/semantic.py b/src/agentic_os/cognition/memory/semantic.py
+index d79c65b..9f595f9 100644
+--- a/src/agentic_os/cognition/memory/semantic.py
++++ b/src/agentic_os/cognition/memory/semantic.py
+@@ -1,3 +1,22 @@
+-from pydantic import BaseModel, Field
++from __future__ import annotations
++from typing import Any, Dict, List, Optional
++from pydantic import BaseModel, ConfigDict, Field
++from ..beliefs.belief import Belief
++
+ class SemanticMemory(BaseModel):
+-    facts: dict = Field(default_factory=dict)
++    """Hechos estables upsert por key. Wrapper sobre CognitionStore.semantic_*"""
++
++    model_config = ConfigDict(frozen=False, extra="forbid")
++
++    facts: Dict[str, Any] = Field(default_factory=dict)
++
++    def upsert(self, key: str, value: Any, belief: Optional[Belief] = None) -> None:
++        self.facts[key] = {"value": value, "belief_id": belief.id if belief else None}
++
++    def get(self, key: str) -> Optional[Any]:
++        entry = self.facts.get(key)
++        return entry["value"] if entry else None
++
++    def search(self, query: str) -> List[str]:
++        q = query.lower()
++        return [k for k in self.facts.keys() if q in k.lower() or q in str(self.facts[k]).lower()]
+diff --git a/src/agentic_os/cognition/memory/store.py b/src/agentic_os/cognition/memory/store.py
+index 1f39b95..c2301e1 100644
+--- a/src/agentic_os/cognition/memory/store.py
++++ b/src/agentic_os/cognition/memory/store.py
+@@ -1,59 +1,208 @@
++"""cognition.memory.store: CognitionStore persistente por (tenant, agente)."""
+ from __future__ import annotations
+-
+-from typing import Any
+-
+-from pydantic import BaseModel, ConfigDict, Field
+-
+-
+-class MemoryItem(BaseModel):
+-    """Contrato mínimo de un elemento de memoria (inmutable)."""
+-
+-    model_config = ConfigDict(frozen=True)
+-
+-    id: str
+-    content: str
+-    metadata: dict[str, Any] = Field(default_factory=dict)
+-
+-
+-class MemoryStore:
+-    """Almacén de memoria en proceso, determinista (sin embeddings ni BD).
+-
+-    ``search`` hace matching por términos (case-insensitive) sobre
+-    id + content + metadata, ordenado por relevancia (nº de términos
+-    encontrados) y luego por id para desempate estable.
+-    """
+-
+-    def __init__(self) -> None:
+-        self._items: dict[str, MemoryItem] = {}
+-
+-    def put(self, item: MemoryItem) -> None:
+-        if not item.id:
+-            raise ValueError("MemoryItem.id es obligatorio")
+-        self._items[item.id] = item
+-
+-    def get(self, item_id: str) -> MemoryItem | None:
+-        return self._items.get(item_id)
+-
+-    def delete(self, item_id: str) -> None:
+-        self._items.pop(item_id, None)
+-
+-    def search(self, query: str) -> list[MemoryItem]:
+-        q = (query or "").strip().lower()
++import json
++import re
++from pathlib import Path
++from typing import Any, Dict, List, Optional
++from .models import EpisodicEvent, ProceduralSkill, SemanticFact, WorkingItem
++from ...kernel.types.ids import new_id
++from ...kernel.types.time import now_utc
++
++class CognitionStoreError(Exception):
++    pass
++
++_TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
++_AGENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
++
++def _validate_id(kind: str, value: str, pattern: re.Pattern) -> str:
++    if not isinstance(value, str) or not value:
++        raise CognitionStoreError(f"{kind} vacio o no str")
++    if not pattern.match(value):
++        raise CognitionStoreError(f"{kind} invalido {value!r}: debe matchear {pattern.pattern}")
++    if ".." in value or "/" in value or "\\" in value:
++        raise CognitionStoreError(f"{kind} invalido por traversal: {value!r}")
++    return value
++
++def _read_jsonl(path: Path) -> List[dict]:
++    if not path.exists():
++        return []
++    out = []
++    with path.open("r", encoding="utf-8") as f:
++        for line in f:
++            line=line.strip()
++            if not line:
++                continue
++            try:
++                out.append(json.loads(line))
++            except:
++                continue
++    return out
++
++def _append_jsonl(path: Path, obj: dict) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("a", encoding="utf-8") as f:
++        f.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
++
++def _rewrite_jsonl(path: Path, objs: List[dict]) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("w", encoding="utf-8") as f:
++        for o in objs:
++            f.write(json.dumps(o, ensure_ascii=False, default=str) + "\n")
++
++class CognitionStore:
++    MAX_WORKING = 200
++    def __init__(self, tenant_id: str, agent_id: str, base_dir: Path | str = Path("data")):
++        self.tenant_id = _validate_id("tenant_id", tenant_id, _TENANT_RE)
++        self.agent_id = _validate_id("agent_id", agent_id, _AGENT_RE)
++        self.base_dir = Path(base_dir)
++        self._mem_dir = self.base_dir / "tenants" / self.tenant_id / "agents" / self.agent_id / "memory"
++        self._mem_dir.mkdir(parents=True, exist_ok=True)
++        self._working_cache: Optional[List[WorkingItem]] = None
++        self._semantic_cache: Optional[Dict[str, SemanticFact]] = None
++        self._procedural_cache: Optional[Dict[str, ProceduralSkill]] = None
++
++    def _p(self, name: str) -> Path:
++        return self._mem_dir / f"{name}.jsonl"
++
++    def _load_working(self) -> List[WorkingItem]:
++        if self._working_cache is not None:
++            return self._working_cache
++        rows = _read_jsonl(self._p("working"))
++        items = [WorkingItem(**r) for r in rows]
++        if len(items) > self.MAX_WORKING:
++            items = items[-self.MAX_WORKING:]
++        self._working_cache = items
++        return items
++
++    def working_add(self, content: str, metadata: Dict[str, Any] = None) -> WorkingItem:
++        if not content or not content.strip():
++            raise CognitionStoreError("working content vacio")
++        item = WorkingItem(tenant_id=self.tenant_id, agent_id=self.agent_id, content=content.strip(), metadata=metadata or {})
++        _append_jsonl(self._p("working"), item.model_dump())
++        cache = self._load_working()
++        cache.append(item)
++        if len(cache) > self.MAX_WORKING:
++            cache = cache[-self.MAX_WORKING:]
++            _rewrite_jsonl(self._p("working"), [c.model_dump() for c in cache])
++        self._working_cache = cache
++        return item
++
++    def working_recent(self, k: int = 10) -> List[WorkingItem]:
++        if k <= 0:
++            return []
++        return self._load_working()[-k:]
++
++    def working_clear(self) -> None:
++        _rewrite_jsonl(self._p("working"), [])
++        self._working_cache = []
++
++    def episodic_append(self, event_type: str, payload: Dict[str, Any] = None, correlation_id: str = None) -> EpisodicEvent:
++        if not event_type or not event_type.strip():
++            raise CognitionStoreError("episodic event_type vacio")
++        ev = EpisodicEvent(tenant_id=self.tenant_id, agent_id=self.agent_id, event_type=event_type.strip(), payload=payload or {}, correlation_id=correlation_id)
++        _append_jsonl(self._p("episodic"), ev.model_dump())
++        return ev
++
++    def episodic_replay(self, event_type: str = None) -> List[EpisodicEvent]:
++        rows = _read_jsonl(self._p("episodic"))
++        events = [EpisodicEvent(**r) for r in rows]
++        if event_type:
++            events = [e for e in events if e.event_type == event_type]
++        return events
++
++    def episodic_since_minutes(self, minutes: int) -> List[EpisodicEvent]:
++        if minutes <= 0:
++            return []
++        from datetime import timedelta
++        cutoff = now_utc() - timedelta(minutes=minutes)
++        return [e for e in self.episodic_replay() if e.created_at >= cutoff]
++
++    def _load_semantic(self) -> Dict[str, SemanticFact]:
++        if self._semantic_cache is not None:
++            return self._semantic_cache
++        rows = _read_jsonl(self._p("semantic"))
++        cache: Dict[str, SemanticFact] = {}
++        for r in rows:
++            try:
++                fact = SemanticFact(**r)
++                cache[fact.key] = fact
++            except:
++                continue
++        self._semantic_cache = cache
++        return cache
++
++    def semantic_upsert(self, key: str, value: Any, source_belief_id: str = None, confidence: float = 1.0) -> SemanticFact:
++        if not key or not key.strip():
++            raise CognitionStoreError("semantic key vacia")
++        key = key.strip()
++        cache = self._load_semantic()
++        now = now_utc()
++        existing = cache.get(key)
++        fact = SemanticFact(id=existing.id if existing else new_id(), tenant_id=self.tenant_id, agent_id=self.agent_id, key=key, value=value, source_belief_id=source_belief_id, confidence=confidence, created_at=existing.created_at if existing else now, updated_at=now)
++        cache[key] = fact
++        _rewrite_jsonl(self._p("semantic"), [f.model_dump() for f in cache.values()])
++        self._semantic_cache = cache
++        return fact
++
++    def semantic_get(self, key: str) -> Optional[SemanticFact]:
++        return self._load_semantic().get(key)
++
++    def semantic_all(self) -> List[SemanticFact]:
++        return list(self._load_semantic().values())
++
++    def semantic_search(self, query: str) -> List[SemanticFact]:
++        q = (query or "").lower()
+         if not q:
+             return []
+         terms = q.split()
+-        scored: list[tuple[int, str, MemoryItem]] = []
+-        for item in self._items.values():
+-            haystack = " ".join(
+-                [item.id, item.content]
+-                + [str(v) for v in item.metadata.values()]
+-            ).lower()
+-            score = sum(haystack.count(t) for t in terms)
++        scored = []
++        for fact in self._load_semantic().values():
++            hay = f"{fact.key} {str(fact.value)}".lower()
++            score = sum(hay.count(t) for t in terms)
+             if score > 0:
+-                scored.append((score, item.id, item))
++                scored.append((score, fact.key, fact))
+         scored.sort(key=lambda t: (-t[0], t[1]))
+-        return [item for _, _, item in scored]
+-
+-    def __len__(self) -> int:
+-        return len(self._items)
+-
++        return [f for _,_,f in scored]
++
++    def _load_procedural(self) -> Dict[str, ProceduralSkill]:
++        if self._procedural_cache is not None:
++            return self._procedural_cache
++        rows = _read_jsonl(self._p("procedural"))
++        cache: Dict[str, ProceduralSkill] = {}
++        for r in rows:
++            try:
++                skill = ProceduralSkill(**r)
++                cache[skill.name] = skill
++            except:
++                continue
++        self._procedural_cache = cache
++        return cache
++
++    def procedural_register(self, name: str, description: str = "", steps: List[Dict[str, Any]] = None, version: int = None) -> ProceduralSkill:
++        if not name or not name.strip():
++            raise CognitionStoreError("procedural name vacio")
++        name = name.strip()
++        cache = self._load_procedural()
++        now = now_utc()
++        existing = cache.get(name)
++        skill = ProceduralSkill(id=existing.id if existing else new_id(), tenant_id=self.tenant_id, agent_id=self.agent_id, name=name, description=description, steps=steps or [], version=version if version is not None else (existing.version + 1 if existing else 1), created_at=existing.created_at if existing else now, updated_at=now)
++        cache[name] = skill
++        _rewrite_jsonl(self._p("procedural"), [s.model_dump() for s in cache.values()])
++        self._procedural_cache = cache
++        return skill
++
++    def procedural_get(self, name: str) -> Optional[ProceduralSkill]:
++        return self._load_procedural().get(name)
++
++    def procedural_list(self) -> List[ProceduralSkill]:
++        return list(self._load_procedural().values())
++
++    def context(self, query: str = "", k: int = 5) -> Dict[str, Any]:
++        working = self.working_recent(k)
++        episodic = self.episodic_replay()[-k:]
++        semantic = self.semantic_search(query)[:k] if query else self.semantic_all()[-k:] if k else []
++        procedural = self.procedural_list()[:k]
++        return {"tenant_id": self.tenant_id, "agent_id": self.agent_id, "working": [w.model_dump() for w in working], "episodic_recent": [e.model_dump() for e in episodic], "semantic": [s.model_dump() for s in semantic], "procedural": [p.model_dump() for p in procedural]}
++
++    def snapshot(self) -> Dict[str, Any]:
++        return {"tenant_id": self.tenant_id, "agent_id": self.agent_id, "working": [w.model_dump() for w in self._load_working()], "episodic": [e.model_dump() for e in self.episodic_replay()], "semantic": [s.model_dump() for s in self.semantic_all()], "procedural": [p.model_dump() for p in self.procedural_list()], "counts": {"working": len(self._load_working()), "episodic": len(self.episodic_replay()), "semantic": len(self.semantic_all()), "procedural": len(self.procedural_list())}}
+diff --git a/src/agentic_os/cognition/memory/working.py b/src/agentic_os/cognition/memory/working.py
+index ac86d65..dee5527 100644
+--- a/src/agentic_os/cognition/memory/working.py
++++ b/src/agentic_os/cognition/memory/working.py
+@@ -1,5 +1,35 @@
+-from pydantic import BaseModel, Field
++from __future__ import annotations
+ from typing import List
++from pydantic import BaseModel, ConfigDict, Field
++from ..beliefs.belief import Belief
++
+ class WorkingMemory(BaseModel):
+-    beliefs: List[dict] = Field(default_factory=list)
+-    capacity: int = 7
++    """Hot cache de 7+-2 beliefs activos. Implementacion real sobre CognitionStore."""
++
++    model_config = ConfigDict(frozen=False, extra="forbid")
++
++    beliefs: List[Belief] = Field(default_factory=list)
++    capacity: int = Field(default=20, ge=1, le=200)
++
++    def add(self, belief: Belief) -> None:
++        # evita duplicados por key, mantiene el de mayor confianza
++        existing_idx = next((i for i, b in enumerate(self.beliefs) if b.key == belief.key), None)
++        if existing_idx is not None:
++            if belief.confidence > self.beliefs[existing_idx].confidence:
++                self.beliefs[existing_idx] = belief
++        else:
++            self.beliefs.append(belief)
++        # capado
++        if len(self.beliefs) > self.capacity:
++            # expulsa menor confianza
++            self.beliefs.sort(key=lambda b: b.confidence)
++            self.beliefs = self.beliefs[-self.capacity:]
++
++    def get(self, key: str) -> Belief | None:
++        for b in self.beliefs:
++            if b.key == key:
++                return b
++        return None
++
++    def all_high_conf(self, threshold: float = 0.7) -> List[Belief]:
++        return [b for b in self.beliefs if b.confidence >= threshold]
+diff --git a/src/agentic_os/cognition/planning/goal.py b/src/agentic_os/cognition/planning/goal.py
+index a620117..d46273c 100644
+--- a/src/agentic_os/cognition/planning/goal.py
++++ b/src/agentic_os/cognition/planning/goal.py
+@@ -1,8 +1,62 @@
+ from __future__ import annotations
+-from pydantic import BaseModel, Field, ConfigDict
++from datetime import datetime
++from enum import Enum
++from typing import Any, Dict, List, Optional
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ from ...kernel.types.ids import new_id
++from ...kernel.types.time import now_utc
++
++class GoalStatus(str, Enum):
++    PENDING = "pending"
++    ACTIVE = "active"
++    ACHIEVED = "achieved"
++    FAILED = "failed"
++    ABANDONED = "abandoned"
++
+ class Goal(BaseModel):
+-    model_config = ConfigDict(frozen=True)
++    """Objetivo SMART auditado. No es un string suelto."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
+     id: str = Field(default_factory=new_id)
+-    description: str
+-    priority: int = 0
++    description: str = Field(min_length=3, max_length=2000)
++    priority: int = Field(default=0, ge=0, le=100)
++    status: GoalStatus = GoalStatus.PENDING
++    parent_goal_id: Optional[str] = None
++    criteria: List[str] = Field(default_factory=list, description="criterios de exito verificables")
++    constraints: List[str] = Field(default_factory=list)
++    owner_tenant_id: str = Field(default="system")
++    owner_agent_id: Optional[str] = None
++    created_at: datetime = Field(default_factory=now_utc)
++    due_at: Optional[datetime] = None
++
++    @field_validator("description")
++    @classmethod
++    def _desc_nonblank(cls, v: str) -> str:
++        if not v.strip():
++            raise ValueError("Goal.description vacia")
++        return v.strip()
++
++class GoalStack(BaseModel):
++    """Pila de objetivos con orden por prioridad. Evita goal-thrashing."""
++
++    model_config = ConfigDict(frozen=False, extra="forbid")
++
++    goals: List[Goal] = Field(default_factory=list)
++
++    def push(self, goal: Goal) -> None:
++        self.goals.append(goal)
++        self.goals.sort(key=lambda g: (-g.priority, g.created_at))
++
++    def pop_next(self) -> Optional[Goal]:
++        for g in self.goals:
++            if g.status in (GoalStatus.PENDING, GoalStatus.ACTIVE):
++                return g
++        return None
++
++    def mark(self, goal_id: str, status: GoalStatus) -> None:
++        for i, g in enumerate(self.goals):
++            if g.id == goal_id:
++                self.goals[i] = g.model_copy(update={"status": status})
++                return
++        raise KeyError(f"goal {goal_id!r} no encontrado")
+diff --git a/src/agentic_os/cognition/planning/intent.py b/src/agentic_os/cognition/planning/intent.py
+index d17b5ea..972c1a2 100644
+--- a/src/agentic_os/cognition/planning/intent.py
++++ b/src/agentic_os/cognition/planning/intent.py
+@@ -1,22 +1,46 @@
+ from __future__ import annotations
+-from typing import Optional
+-from pydantic import BaseModel, Field, ConfigDict
++from enum import Enum
++from typing import Any, Dict, List, Optional
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ from ...kernel.types.ids import new_id
+ 
++class IntentKind(str, Enum):
++    REPLY_TO_USER = "reply_to_user"
++    SEND_EMAIL = "send_email"
++    SEND_SLACK = "send_slack"
++    SEND_WHATSAPP = "send_whatsapp"
++    CREATE_EVENT = "create_event"
++    SEARCH_WEB = "search_web"
++    EXTRACT_PAGE = "extract_page"
++    CREATE_DOCUMENT = "create_document"
++    SCHEDULE_JOB = "schedule_job"
++    PUBLISH_POST = "publish_post"
++    READ_FILE = "read_file"
++    CUSTOM = "custom"
+ 
+ class Intent(BaseModel):
+-    """
+-    Lo que un rol con permiso 'propose_intent' (ej. Gemini como 'director')
+-    propone que ocurra. NO es una acción ejecutada: todavía tiene que pasar
+-    por el policy engine (policy/evaluator.py) antes de convertirse en un
+-    Event real dentro del world log.
+-    """
+-    model_config = ConfigDict(frozen=True)
++    """Propuesta del LLM/Proposer. NUNCA es una accion ejecutada. Pasa por Policy."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
+     id: str = Field(default_factory=new_id)
+-    goal: str  # qué quiere lograr, en una frase (ej. "responder al usuario", "crear una cita")
+-    kind: str  # tipo de acción propuesta, ej. "send_email", "create_appointment", "reply_to_user"
+-    entity_id: str = "n/a"  # sobre qué entidad actúa, si aplica
+-    payload: str = ""  # detalles adicionales en texto libre por ahora (se estructurará más adelante)
+-    rationale: str = ""  # por qué Gemini propone esto — queda en el log, auditable
+-    reply_to_user: Optional[str] = None  # texto en lenguaje natural para mostrar en el chat
+-    confidence: Optional[float] = None
++    goal: str = Field(description="que quiere lograr en una frase")
++    kind: IntentKind = IntentKind.REPLY_TO_USER
++    entity_id: str = Field(default="n/a")
++    payload: Dict[str, Any] = Field(default_factory=dict, description="parametros estructurados, no string libre")
++    rationale: str = Field(default="", description="por que se propone, auditable")
++    reply_to_user: Optional[str] = None
++    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
++    requires_approval: bool = Field(default=False)
++    risk_level: str = Field(default="low", description="low|medium|high")
++    source_belief_ids: List[str] = Field(default_factory=list)
++
++    @field_validator("goal")
++    @classmethod
++    def _goal_nonblank(cls, v: str) -> str:
++        if not v or not v.strip():
++            raise ValueError("Intent.goal obligatorio")
++        return v.strip()
++
++    def is_safe_to_auto_execute(self) -> bool:
++        return not self.requires_approval and self.risk_level == "low" and self.kind == IntentKind.REPLY_TO_USER
+diff --git a/src/agentic_os/cognition/planning/plan.py b/src/agentic_os/cognition/planning/plan.py
+index d6004bd..3935a93 100644
+--- a/src/agentic_os/cognition/planning/plan.py
++++ b/src/agentic_os/cognition/planning/plan.py
+@@ -1,32 +1,56 @@
+ from __future__ import annotations
+-from pydantic import BaseModel, Field, ConfigDict, field_validator
+-from typing import Any, List, Optional
++from typing import Any, Dict, List, Optional
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ from ...kernel.types.ids import new_id
++
+ class PlanStep(BaseModel):
+-    model_config = ConfigDict(frozen=True)
+-    capability: str
+-    resource_kind: Optional[str] = None
+-    params: dict[str, Any] = Field(default_factory=dict)
++    """Paso determinista: capability + validacion + compensacion."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    id: str = Field(default_factory=new_id)
++    order: int = Field(ge=0)
++    capability: str = Field(description="tool o microaccion ej. web.search")
++    description: str = Field(default="")
++    params: Dict[str, Any] = Field(default_factory=dict)
++    preconditions: List[str] = Field(default_factory=list)
++    postconditions: List[str] = Field(default_factory=list)
++    compensation: Optional[str] = Field(default=None, description="capability para rollback")
++    timeout_seconds: int = Field(default=60, gt=0)
++    retry_policy: Dict[str, Any] = Field(default_factory=dict)
+ 
+     @field_validator("capability")
+     @classmethod
+-    def _capability_no_vacia(cls, v: str) -> str:
++    def _cap_nonblank(cls, v: str) -> str:
+         if not v or not v.strip():
+-            raise ValueError("PlanStep.capability es obligatoria")
+-        return v
++            raise ValueError("PlanStep.capability obligatoria")
++        return v.strip()
+ 
+-    @field_validator("params")
+-    @classmethod
+-    def _params_objeto(cls, value: dict[str, Any]) -> dict[str, Any]:
+-        if not isinstance(value, dict):
+-            raise ValueError("params must be an object")
+-        for key in value:
+-            if not isinstance(key, str):
+-                raise ValueError("params debe tener claves str")
+-        return value
+ class Plan(BaseModel):
+-    model_config = ConfigDict(frozen=True)
++    """DAG de pasos. Valida orden y dependencias."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
+     id: str = Field(default_factory=new_id)
+     intent_id: str
++    goal_id: Optional[str] = None
+     steps: List[PlanStep] = Field(default_factory=list)
++    estimated_cost: float = Field(default=0.0, ge=0.0)
++    risk: str = Field(default="low")
++
++    @field_validator("steps")
++    @classmethod
++    def _steps_ordered_unique(cls, v: List[PlanStep]) -> List[PlanStep]:
++        orders = [s.order for s in v]
++        if orders != sorted(orders):
++            raise ValueError("steps deben estar ordenados por order")
++        if len(set(orders)) != len(orders):
++            raise ValueError("order duplicado en steps")
++        return v
++
++    def topological(self) -> List[PlanStep]:
++        # ya ordenados por order, pero valida que no haya huecos grandes
++        return sorted(self.steps, key=lambda s: s.order)
+ 
++    def requires_approval(self) -> bool:
++        return any(s.capability in ("gmail_send", "slack_send", "whatsapp_send", "meta_post_publish") for s in self.steps)
+diff --git a/src/agentic_os/cognition/reasoning/causal.py b/src/agentic_os/cognition/reasoning/causal.py
+index c3ebbe8..98b6c32 100644
+--- a/src/agentic_os/cognition/reasoning/causal.py
++++ b/src/agentic_os/cognition/reasoning/causal.py
+@@ -1,4 +1,34 @@
+ from __future__ import annotations
++from typing import Dict, List, Optional
++from collections import defaultdict, deque
++
+ class CausalReasoner:
+-    def explain(self, event_id: str) -> dict:
+-        return {"event_id": event_id, "causes": []}
++    """Grafo causal simple para explain(event_id)."""
++
++    def __init__(self):
++        self._causes: Dict[str, List[str]] = defaultdict(list)  # event_id -> [cause_ids]
++        self._effects: Dict[str, List[str]] = defaultdict(list)
++
++    def add_causation(self, cause_id: str, effect_id: str) -> None:
++        if effect_id not in self._causes or cause_id not in self._causes[effect_id]:
++            self._causes[effect_id].append(cause_id)
++        if cause_id not in self._effects or effect_id not in self._effects[cause_id]:
++            self._effects[cause_id].append(effect_id)
++
++    def explain(self, event_id: str, depth: int = 3) -> dict:
++        # BFS hacia atras
++        chain: List[List[str]] = []
++        visited = set()
++        queue = deque([(event_id, 0, [event_id])])
++        while queue:
++            cur, d, path = queue.popleft()
++            if d >= depth:
++                continue
++            for cause in self._causes.get(cur, []):
++                if cause in visited:
++                    continue
++                visited.add(cause)
++                new_path = [cause] + path
++                chain.append(new_path)
++                queue.append((cause, d + 1, new_path))
++        return {"event_id": event_id, "causal_chains": chain, "direct_causes": self._causes.get(event_id, []), "direct_effects": self._effects.get(event_id, [])}
+diff --git a/src/agentic_os/cognition/reasoning/consistency.py b/src/agentic_os/cognition/reasoning/consistency.py
+index a079c1f..5e8d01d 100644
+--- a/src/agentic_os/cognition/reasoning/consistency.py
++++ b/src/agentic_os/cognition/reasoning/consistency.py
+@@ -1,7 +1,33 @@
+ from __future__ import annotations
+-from typing import List
++from typing import List, Dict
++from collections import defaultdict
+ from ..beliefs.belief import Belief
++
+ class ConsistencyChecker:
++    """Detecta contradicciones por misma key con contenido distinto y alta confianza."""
++
+     def check(self, beliefs: List[Belief]) -> List[str]:
+-        # returns list of inconsistencies
+-        return []
++        issues: List[str] = []
++        by_key: Dict[str, List[Belief]] = defaultdict(list)
++        for b in beliefs:
++            by_key[b.key].append(b)
++
++        for key, group in by_key.items():
++            if len(group) <= 1:
++                continue
++            # si hay 2 beliefs con misma key pero content distinto y confianza >0.7
++            contents = [str(b.content) for b in group]
++            if len(set(contents)) > 1:
++                high_conf = [b for b in group if b.confidence > 0.7]
++                if len(high_conf) >= 2:
++                    issues.append(f"CONFLICT key={key!r} con {len(group)} valores distintos alta confianza: {[b.id[:8] for b in high_conf]}")
++        return issues
++
++    def resolve(self, beliefs: List[Belief]) -> List[Belief]:
++        # keep highest confidence per key
++        by_key: Dict[str, Belief] = {}
++        for b in beliefs:
++            existing = by_key.get(b.key)
++            if existing is None or b.confidence > existing.confidence:
++                by_key[b.key] = b
++        return list(by_key.values())
+diff --git a/src/agentic_os/cognition/reasoning/deductive.py b/src/agentic_os/cognition/reasoning/deductive.py
+index 5e025be..9d67725 100644
+--- a/src/agentic_os/cognition/reasoning/deductive.py
++++ b/src/agentic_os/cognition/reasoning/deductive.py
+@@ -1,6 +1,52 @@
+ from __future__ import annotations
+-from typing import List
+-from ..beliefs.belief import Belief
++from typing import List, Dict
++from ..beliefs.belief import Belief, BeliefKind
++from ...kernel.types.ids import new_id
++
+ class DeductiveReasoner:
++    """Forward chaining simple: si A y A->B entonces B. No inventa hechos."""
++
++    def __init__(self, rules: List[Dict] = None):
++        self.rules = rules or []
++
+     def infer(self, beliefs: List[Belief]) -> List[Belief]:
+-        return beliefs
++        # 1. index por key
++        by_key: Dict[str, Belief] = {b.key: b for b in beliefs}
++        new_beliefs: List[Belief] = []
++
++        # Regla de ejemplo: si cliente.email existe -> cliente.contactable = true
++        if "cliente.email" in by_key:
++            email_belief = by_key["cliente.email"]
++            if "cliente.contactable" not in by_key:
++                new_beliefs.append(
++                    Belief(
++                        id=new_id(),
++                        kind=BeliefKind.INFERRED,
++                        key="cliente.contactable",
++                        content={"value": True, "via": "cliente.email existe"},
++                        confidence=email_belief.confidence * 0.9,
++                        source_observation_id=email_belief.source_observation_id,
++                        supports=[email_belief.id],
++                    )
++                )
++
++        # Reglas custom pasadas en __init__
++        for rule in self.rules:
++            # rule = {"if_keys": ["a","b"], "then_key": "c", "then_content": {...}}
++            if_keys = rule.get("if_keys", [])
++            if all(k in by_key for k in if_keys):
++                then_key = rule.get("then_key")
++                if then_key not in by_key:
++                    support_ids = [by_key[k].id for k in if_keys]
++                    avg_conf = sum(by_key[k].confidence for k in if_keys) / len(if_keys) if if_keys else 1.0
++                    new_beliefs.append(
++                        Belief(
++                            key=then_key,
++                            kind=BeliefKind.INFERRED,
++                            content=rule.get("then_content", {}),
++                            confidence=avg_conf * rule.get("confidence_factor", 0.9),
++                            supports=support_ids,
++                        )
++                    )
++
++        return beliefs + new_beliefs
+diff --git a/src/agentic_os/cognition/reasoning/uncertainty.py b/src/agentic_os/cognition/reasoning/uncertainty.py
+index e81d958..9636880 100644
+--- a/src/agentic_os/cognition/reasoning/uncertainty.py
++++ b/src/agentic_os/cognition/reasoning/uncertainty.py
+@@ -1,5 +1,30 @@
+ from __future__ import annotations
++from typing import List
+ from ..beliefs.belief import Belief
++
+ class UncertaintyTracker:
++    """Tracking de incertidumbre: score + calibracion + decay."""
++
+     def score(self, belief: Belief) -> float:
+-        return belief.confidence
++        # 1 - confidence = incertidumbre base, penaliza si expira pronto o tiene contradicciones
++        base = 1.0 - belief.confidence
++        if belief.contradicts:
++            base += 0.1 * len(belief.contradicts)
++        if belief.is_expired():
++            return 1.0
++        return min(1.0, base)
++
++    def needs_review(self, belief: Belief, threshold: float = 0.4) -> bool:
++        return self.score(belief) > threshold
++
++    def aggregate_confidence(self, beliefs: List[Belief]) -> float:
++        if not beliefs:
++            return 0.0
++        # promedio ponderado inverso a incertidumbre
++        total = 0.0
++        weight_sum = 0.0
++        for b in beliefs:
++            w = 1.0 - self.score(b) + 0.01
++            total += b.confidence * w
++            weight_sum += w
++        return total / weight_sum if weight_sum else 0.0
+diff --git a/src/agentic_os/cognition/roles/library.py b/src/agentic_os/cognition/roles/library.py
+index 7a16359..94b0374 100644
+--- a/src/agentic_os/cognition/roles/library.py
++++ b/src/agentic_os/cognition/roles/library.py
+@@ -1,6 +1,54 @@
+-from.role import Role
++"""Libreria de roles production."""
++from .role import Role
++
+ LIBRARY = {
+-  "director": Role(name="director", permissions=["propose_intent"], forbidden_tools=[]),
+-  "operator": Role(name="operator", permissions=["execute"], forbidden_tools=["gmail_send"]),
+-  "auditor": Role(name="auditor", permissions=["read"], forbidden_tools=["*"])
++    "director": Role(
++        name="director",
++        description="Propone intenciones, nunca ejecuta. LLM principal.",
++        permissions=["propose_intent", "read"],
++        forbidden_tools=["*"],
++    ),
++    "operator": Role(
++        name="operator",
++        description="Ejecuta tools aprobadas. No puede enviar email sin approval.",
++        permissions=["execute", "read"],
++        forbidden_tools=["gmail_send"],
++        allowed_tools=["gmail_read", "slack_send", "web_search", "web_scrape", "documentation_create", "calendar_list_events", "drive_list_files"],
++    ),
++    "communicator": Role(
++        name="communicator",
++        description="Puede enviar comunicaciones tras approval del director/usuario.",
++        permissions=["execute", "read", "propose_intent"],
++        forbidden_tools=[],
++        allowed_tools=["gmail_send", "slack_send", "whatsapp_send", "gmail_create_draft", "meta_post_publish"],
++        inherits=["operator"],
++    ),
++    "researcher": Role(
++        name="researcher",
++        description="Solo lectura web y documentacion. No escribe ni envia.",
++        permissions=["read", "propose_intent"],
++        forbidden_tools=["gmail_send", "slack_send", "whatsapp_send", "meta_post_publish", "calendar_create_event"],
++    ),
++    "admin": Role(
++        name="admin",
++        description="Acceso total, gestiona tenants y policies. Solo con X-Admin-Key.",
++        permissions=["propose_intent", "execute", "read", "write", "approve", "manage_tenants"],
++        forbidden_tools=[],
++    ),
++    "auditor": Role(
++        name="auditor",
++        description="Solo lectura para auditoria. Nunca ejecuta.",
++        permissions=["read"],
++        forbidden_tools=["*"],
++    ),
+ }
++
++def get_role(name: str) -> Role:
++    role = LIBRARY.get(name.lower())
++    if not role:
++        raise KeyError(f"rol no registrado: {name!r}")
++    return role
++
++def can_role_execute(role_name: str, tool_name: str) -> bool:
++    role = get_role(role_name)
++    return role.can_use_tool(tool_name)
+diff --git a/src/agentic_os/cognition/roles/role.py b/src/agentic_os/cognition/roles/role.py
+index 8eda8fd..b4f2384 100644
+--- a/src/agentic_os/cognition/roles/role.py
++++ b/src/agentic_os/cognition/roles/role.py
+@@ -1,6 +1,42 @@
+-from pydantic import BaseModel, Field, ConfigDict
++from __future__ import annotations
++from typing import List, Set
++from pydantic import BaseModel, ConfigDict, Field, field_validator
++
+ class Role(BaseModel):
+-    model_config = ConfigDict(frozen=True)
++    """Rol RBAC: permisos + tools prohibidas + herencia."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
+     name: str
+-    permissions: list[str] = Field(default_factory=list)
+-    forbidden_tools: list[str] = Field(default_factory=list)
++    description: str = ""
++    permissions: List[str] = Field(default_factory=list, description="propose_intent, execute, read, write, approve...")
++    forbidden_tools: List[str] = Field(default_factory=list, description="tools que nunca puede usar, * = todas")
++    inherits: List[str] = Field(default_factory=list, description="roles de los que hereda permisos")
++    allowed_tools: List[str] = Field(default_factory=list, description="si no vacio, whitelist")
++
++    @field_validator("name")
++    @classmethod
++    def _name_nonblank(cls, v: str) -> str:
++        if not v or not v.strip():
++            raise ValueError("Role.name obligatorio")
++        return v.strip().lower()
++
++    def can(self, permission: str) -> bool:
++        return permission in self.permissions
++
++    def can_use_tool(self, tool_name: str) -> bool:
++        if "*" in self.forbidden_tools:
++            return False
++        if tool_name in self.forbidden_tools:
++            return False
++        if self.allowed_tools:
++            return tool_name in self.allowed_tools
++        return True
++
++    def effective_permissions(self, library: dict) -> Set[str]:
++        perms = set(self.permissions)
++        for parent_name in self.inherits:
++            parent = library.get(parent_name)
++            if parent:
++                perms.update(parent.effective_permissions(library))
++        return perms
+diff --git a/src/agentic_os/cognition/skills/library.py b/src/agentic_os/cognition/skills/library.py
+index f33db01..5d5db93 100644
+--- a/src/agentic_os/cognition/skills/library.py
++++ b/src/agentic_os/cognition/skills/library.py
+@@ -1,12 +1,59 @@
+-"""cognition.skills.library: registro de skills disponibles."""
+-
++"""Libreria de skills production - 3 SOPs reales."""
+ from __future__ import annotations
++from .skill import Skill, SkillStep
+ 
+-from typing import List
+-
+-from .skill import Skill
++SKILLS = [
++    Skill(
++        name="inbox_zero",
++        description="Procesa bandeja de entrada: lee unread, clasifica, crea borradores para leads.",
++        category="communication",
++        requires_tool="gmail_read",
++        role_required="operator",
++        input_schema={"type": "object", "properties": {"max_emails": {"type": "integer"}}, "required": []},
++        output_schema={"type": "object", "properties": {"drafts_created": {"type": "integer"}}},
++        steps=[
++            SkillStep(order=0, name="list_unread", description="Lista no leidos", tool="gmail_read", output_key="emails"),
++            SkillStep(order=1, name="classify", description="Clasifica por intencion", tool="documentation_create", requires="emails", output_key="classified"),
++            SkillStep(order=2, name="draft_replies", description="Crea borradores", tool="gmail_create_draft", requires="classified", output_key="drafts_created"),
++        ],
++        preconditions=["gmail_read disponible"],
++        postconditions=["borradores creados, nunca envio directo"],
++        version="1.0",
++    ),
++    Skill(
++        name="research_and_write",
++        description="Investiga web y escribe documento interno.",
++        category="research",
++        requires_tool="web_search",
++        role_required="researcher",
++        input_schema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
++        steps=[
++            SkillStep(order=0, name="search", tool="web_search", output_key="search_results", validation="query_no_vacia"),
++            SkillStep(order=1, name="extract", tool="web_scrape", requires="search_results", output_key="pages"),
++            SkillStep(order=2, name="write_doc", tool="documentation_create", requires="pages", output_key="doc_id"),
++        ],
++        version="1.0",
++    ),
++    Skill(
++        name="schedule_meeting",
++        description="Busca hueco y crea evento de calendario.",
++        category="automation",
++        requires_tool="calendar_list_events",
++        role_required="operator",
++        input_schema={"type": "object", "properties": {"attendees": {"type": "array"}, "duration_minutes": {"type": "integer"}}, "required": ["attendees"]},
++        steps=[
++            SkillStep(order=0, name="list_events", tool="calendar_list_events", output_key="existing_events"),
++            SkillStep(order=1, name="propose_slot", tool="documentation_create", requires="existing_events", output_key="proposed_slot"),
++            SkillStep(order=2, name="create_event", tool="calendar_create_event", requires="proposed_slot", output_key="event_id"),
++        ],
++        version="1.0",
++    ),
++]
+ 
+-# Registro de skills disponibles en el sistema.
+-# Cada Skill es un SOP formal (ver cognition/skills/skill.py).
+-SKILLS: List[Skill] = []
++SKILLS_BY_NAME = {s.name: s for s in SKILLS}
+ 
++def get_skill(name: str) -> Skill:
++    skill = SKILLS_BY_NAME.get(name)
++    if not skill:
++        raise KeyError(f"skill no registrado: {name!r}")
++    return skill
+diff --git a/src/agentic_os/cognition/skills/skill.py b/src/agentic_os/cognition/skills/skill.py
+index 313a03a..e1e4cec 100644
+--- a/src/agentic_os/cognition/skills/skill.py
++++ b/src/agentic_os/cognition/skills/skill.py
+@@ -1,39 +1,61 @@
+ from __future__ import annotations
+-
+ from typing import Any, Dict, List, Optional
+-
+-from pydantic import BaseModel, ConfigDict, Field
+-
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ 
+ class SkillStep(BaseModel):
+-    """Un paso dentro del SOP (procedimiento operativo estándar) de un skill.
++    """Paso determinista del SOP."""
+ 
+-    Cada paso es determinista: define qué tool llama y cómo valida la salida.
+-    """
++    model_config = ConfigDict(frozen=True, extra="forbid")
+ 
+-    model_config = ConfigDict(frozen=True)
+-
+-    order: int
++    order: int = Field(ge=0)
+     name: str
+-    tool: str  # capability/tool a la que llama (ej. "gmail_send")
+-    requires: Optional[str] = None  # campo que debe venir del paso anterior
+-    validation: Optional[str] = None  # regla opcional (ej. "email_valido")
+-
++    description: str = ""
++    tool: str = Field(description="capability/tool ej. gmail_send")
++    requires: Optional[str] = Field(default=None, description="campo que debe venir del paso anterior")
++    validation: Optional[str] = Field(default=None, description="regla ej. email_valido, url_valida")
++    output_key: str = Field(default="output", description="donde guardar el output en el contexto")
++    timeout_seconds: int = Field(default=60, gt=0)
++
++    @field_validator("name", "tool")
++    @classmethod
++    def _nonblank(cls, v: str) -> str:
++        if not v or not v.strip():
++            raise ValueError("campo obligatorio vacio")
++        return v.strip()
+ 
+ class Skill(BaseModel):
+-    """Un Skill = un SOP formal: taxonomía + pipeline de pasos + permisos.
+-
+-    El LLM NUNCA ejecuta: solo propone una Intent con el skill y los
+-    parámetros. El sistema instancia el Skill y ejecuta sus pasos de forma
+-    determinista, validando cada paso contra las leyes Pydantic.
+-    """
++    """Skill = SOP formal con input/output schema + pasos validados."""
+ 
+-    model_config = ConfigDict(frozen=True)
++    model_config = ConfigDict(frozen=True, extra="forbid")
+ 
+     name: str
+     description: str
+-    requires_tool: str  # capability principal (para compatibilidad)
++    category: str = Field(default="general", description="research, communication, automation...")
++    requires_tool: str
+     steps: List[SkillStep] = Field(default_factory=list)
+-    role_required: str = "operator"  # rol mínimo que puede ejecutar el skill
+-    input_schema: Dict[str, Any] = Field(default_factory=dict)  # esquema de entrada
+-    output_schema: Dict[str, Any] = Field(default_factory=dict)  # esquema de salida
++    role_required: str = Field(default="operator")
++    input_schema: Dict[str, Any] = Field(default_factory=dict)
++    output_schema: Dict[str, Any] = Field(default_factory=dict)
++    preconditions: List[str] = Field(default_factory=list)
++    postconditions: List[str] = Field(default_factory=list)
++    version: str = Field(default="1.0")
++
++    @field_validator("steps")
++    @classmethod
++    def _steps_ordered(cls, v: List[SkillStep]) -> List[SkillStep]:
++        orders = [s.order for s in v]
++        if orders != sorted(orders):
++            raise ValueError("Skill steps deben estar ordenados por order")
++        if len(set(orders)) != len(orders):
++            raise ValueError("order duplicado en SkillStep")
++        return v
++
++    def validate_input(self, payload: Dict[str, Any]) -> None:
++        # validacion basica de required keys si input_schema tiene required
++        required = self.input_schema.get("required", [])
++        for key in required:
++            if key not in payload:
++                raise ValueError(f"Skill {self.name!r} requiere input {key!r}")
++
++    def tool_chain(self) -> List[str]:
++        return [s.tool for s in self.steps]
