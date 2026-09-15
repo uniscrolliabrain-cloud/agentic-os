@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import threading
@@ -870,3 +870,49 @@ def get_artifact(tenant_id: str, artifact_id: str, scope: str = Depends(tenant_s
             with open(p, "r", encoding="utf-8") as fh:
                 return json.load(fh)
     raise HTTPException(status_code=404, detail="Artefacto no encontrado")
+
+# ---------------------------------------------------------------- COGNITION ----
+# Memoria persistente por (tenant, agente) - audit paso 3
+
+try:
+    from ...cognition.memory import CognitionRegistry
+    _cognition_registry = CognitionRegistry()
+except Exception:
+    _cognition_registry = None
+
+
+@app.get("/api/v1/agents/{agent_id}/cognition")
+def get_agent_cognition(agent_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
+    """Vista de las 4 memorias del agente, aisladas por tenant de cabecera.
+
+    - tenant viene de X-Tenant-Id / JWT (tenant_scope)
+    - agent_id se valida contra regex del CognitionStore (fail-closed)
+    - Nunca expone memoria de otro tenant
+    """
+    if _cognition_registry is None:
+        raise HTTPException(status_code=503, detail="CognitionStore no disponible")
+    try:
+        store = _cognition_registry.for_agent(scope, agent_id)
+        return store.snapshot()
+    except Exception as e:
+        # Validacion de id invalido -> 400, resto -> 500
+        msg = str(e)
+        if "inválido" in msg or "invalido" in msg.lower():
+            raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=500, detail=f"Error leyendo cognicion: {msg[:300]}")
+
+
+@app.get("/api/v1/agents/{agent_id}/cognition/context")
+def get_agent_cognition_context(agent_id: str, q: str = "", k: int = 5, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
+    """Contexto consolidado para inyeccion en prompt (working+episodic+semantic+procedural)."""
+    if _cognition_registry is None:
+        raise HTTPException(status_code=503, detail="CognitionStore no disponible")
+    try:
+        store = _cognition_registry.for_agent(scope, agent_id)
+        return store.context(query=q, k=k)
+    except Exception as e:
+        msg = str(e)
+        if "inválido" in msg or "invalido" in msg.lower():
+            raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=500, detail=f"Error leyendo contexto: {msg[:300]}")
+
