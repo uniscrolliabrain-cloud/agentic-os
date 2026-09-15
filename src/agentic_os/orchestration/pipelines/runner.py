@@ -21,6 +21,30 @@ class PipelineRunner:
         self.idempotency = IdempotencyStore()
         self.llm = llm
 
+    def emit_event(
+        self,
+        kind: str,
+        entity_id: str,
+        tenant_id: str,
+        payload: Optional[Dict[str, Any]] = None,
+        correlation_id: Optional[str] = None,
+        command_id: Optional[str] = None,
+    ) -> None:
+        """Emite un evento al EventLog (usado por pipelines para entity_created, etc.)."""
+        if self.executor.event_log is None:
+            return
+        from ...kernel.world.events import Event
+
+        event = Event(
+            kind=kind,
+            entity_id=entity_id,
+            tenant_id=tenant_id,
+            payload=payload or {},
+            correlation_id=correlation_id,
+            command_id=command_id,
+        )
+        self.executor.event_log.append(event)
+
     def tool(
         self,
         name: str,
@@ -51,13 +75,23 @@ class PipelineRunner:
 
     def _run_impl(
         self,
-        tenant_id: str,
-        command_id: Optional[str],
-        correlation_id: Optional[str],
         pipeline_id: str = "default",
-        **kwargs,
+        tenant_id: str = "system",
+        params: Optional[Dict[str, Any]] = None,
+        command_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        result = {"status": "OK", "pipeline_id": pipeline_id, "tenant_id": tenant_id}
+        from . import PIPELINES, UnknownPipelineError
+
+        if pipeline_id not in PIPELINES:
+            raise UnknownPipelineError(pipeline_id)
+
+        fn = PIPELINES[pipeline_id]
+        try:
+            result = fn(self, tenant_id, params or {}, correlation_id)
+        except Exception as exc:
+            raise PipelineStepError(pipeline_id, str(exc)) from exc
+
         if command_id:
             try:
                 self.idempotency.save(tenant_id or "system", f"pipeline:{command_id}", result)
@@ -67,12 +101,14 @@ class PipelineRunner:
 
     def run(
         self,
+        pipeline_id: str = None,
         tenant_id: str = None,
+        params: Optional[Dict[str, Any]] = None,
         command_id: str = None,
         correlation_id: str = None,
-        **kwargs,
     ) -> Dict[str, Any]:
         tid = tenant_id or "system"
+        pid = pipeline_id or "default"
         if command_id:
             try:
                 cached = self.idempotency.get(tid, f"pipeline:{command_id}")
@@ -80,4 +116,7 @@ class PipelineRunner:
                     return cached
             except Exception:
                 pass
-        return self._run_impl(tid, command_id, correlation_id, **kwargs)
+        return self._run_impl(
+            pipeline_id=pid, tenant_id=tid, params=params,
+            command_id=command_id, correlation_id=correlation_id,
+        )

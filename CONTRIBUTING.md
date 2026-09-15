@@ -8,7 +8,7 @@ de tocar `kernel/`, `policy/` o `connectors/`.
 
 ```bash
 git clone <repo>
-cd uniscrolliabrain-cloud-agentic-os
+cd agentic-os-kilo
 pip install -e ".[dev]"
 cp .env.example .env   # rellena tus keys de desarrollo
 pytest                 # confirma que todo pasa antes de empezar
@@ -16,7 +16,7 @@ pytest                 # confirma que todo pasa antes de empezar
 
 ## Flujo de trabajo
 
-1. Crea una rama desde `main`: `feature/<descripcion>`, `fix/<descripcion>` o `hotfix/<descripcion>`.
+1. Crea una rama desde `master`: `feature/<descripcion>`, `fix/<descripcion>` o `hotfix/<descripcion>`.
 2. Haz commits atómicos siguiendo [Conventional Commits](https://www.conventionalcommits.org/):
    `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 3. Si corriges un bug, añade un test de regresión en `tests/bugs/test_bugNN_<descripcion>.py`,
@@ -27,7 +27,7 @@ pytest                 # confirma que todo pasa antes de empezar
    mypy src/agentic_os
    pytest
    ```
-5. Abre el PR contra `main` usando la plantilla. La CI debe pasar en verde.
+5. Abre el PR contra `master` usando la plantilla. La CI debe pasar en verde.
 6. Si el cambio toca `kernel/`, `policy/` o `connectors/`, se requiere revisión
    explícita (ver `.github/CODEOWNERS`).
 

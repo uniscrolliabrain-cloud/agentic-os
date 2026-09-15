@@ -115,6 +115,7 @@ def test_handle_pipeline_runner_receives_executor_and_execution_goes_through_it(
     monkeypatch,
 ):
     monkeypatch.setenv("DEV_ALLOW_ALL", "true")
+    import agentic_os.orchestration.pipelines  # noqa: F401  registra PIPELINES
 
     log = MemoryEventLog()
     registry = build_default_registry()

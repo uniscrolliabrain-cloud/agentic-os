@@ -1,11 +1,13 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
@@ -81,18 +83,29 @@ _API_KEY_HEADER = "X-Api-Key"
 _ADMIN_KEY_HEADER = "X-Admin-Key"
 _AUTH_HEADER = "Authorization"
 
+logger = logging.getLogger(__name__)
 
-def _verify_supabase_jwt(auth_header: Optional[str]) -> Optional[dict]:
-    """Verifica JWT RS256 de Supabase. Devuelve claims o None."""
+
+class _JWTState(str, Enum):
+    NO_TOKEN = "no_token"
+    VALID = "valid"
+    INVALID = "invalid"
+
+
+def _verify_supabase_jwt(auth_header: Optional[str]) -> Tuple[Optional[dict], _JWTState]:
+    """Verifica JWT RS256 de Supabase. Devuelve (claims, estado)."""
     if not auth_header or not auth_header.startswith("Bearer "):
-        return None
+        return None, _JWTState.NO_TOKEN
     token = auth_header[7:]
     try:
         from ...infrastructure.auth.jwt_verifier import get_verifier
+
         claims = get_verifier().verify(token)
-        return claims.model_dump()
-    except Exception:
-        return None
+        logger.info("Supabase JWT verificado para tenant_id=%s", claims.tenant_id)
+        return claims.model_dump(), _JWTState.VALID
+    except Exception as exc:
+        logger.warning("Supabase JWT inválido/expirado: %s", exc)
+        return None, _JWTState.INVALID
 
 # tenant virtual por defecto para peticiones anónimas (back-compat en dev)
 _DEFAULT_SCOPE = "system"
@@ -111,16 +124,28 @@ def tenant_scope(
       2. X-Tenant-Id + X-Api-Key (legacy)
       3. Sin cabecera -> scope "system" (anon)
     """
-    claims = _verify_supabase_jwt(authorization)
+    claims, jwt_state = _verify_supabase_jwt(authorization)
+    if jwt_state == _JWTState.INVALID:
+        raise HTTPException(status_code=401, detail="JWT inválido o expirado")
     if claims:
-        tenant_id = claims.get("tenant_id") or claims.get("user_metadata", {}).get("tenant_id")
+        user_metadata = claims.get("user_metadata")
+        if isinstance(user_metadata, dict):
+            tenant_id = claims.get("tenant_id") or user_metadata.get("tenant_id")
+        else:
+            tenant_id = claims.get("tenant_id")
         if tenant_id:
             tenant = _tenant_registry.get(str(tenant_id))
             if tenant is not None:
                 return tenant.id
-        return str(tenant_id or _DEFAULT_SCOPE) if tenant_id else _DEFAULT_SCOPE
+            logger.warning(
+                "JWT tenant_id '%s' no registrado; usando scope por defecto",
+                tenant_id,
+            )
+        return _DEFAULT_SCOPE
 
     if not x_tenant_id:
+        if settings.admin_api_key and x_admin_key == settings.admin_api_key:
+            return _DEFAULT_SCOPE
         return _DEFAULT_SCOPE
     tenant = _tenant_registry.get(x_tenant_id)
     if tenant is None:
