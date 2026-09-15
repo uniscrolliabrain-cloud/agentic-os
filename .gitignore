@@ -83,3 +83,11 @@ data/
 *.log
 *.err.log
 .aider*
+
+# --- Higiene del repo (CHUNK 2) ---
+.scratch/
+data/tenants/*.json
+!data/tenants/registry.example.json
+data/eventlog/*.jsonl
+data/idempotency/**
+data/conversations/*.json

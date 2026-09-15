@@ -1,48 +1,22 @@
-name = "agentic-os"
-version = "0.1.0"
-description = "Deterministic Agentic OS for Enterprises - Kernel = invariants"
-readme = "README.md"
-requires-python = ">=3.11"
-dependencies = [
-    "pydantic>=2.7",
-    "pydantic-settings>=2.4",
-    "google-genai>=0.1.1",
-    "fastapi>=0.115",
-    "httpx>=0.27",
-    "cryptography>=42",
-    "apscheduler>=3.10",
-    "groq>=0.4.0",
-    "requests>=2.32",
-    "temporalio>=1.9.0",
-    "supabase>=2.0.0",
-    "psycopg[binary]>=3.1.0",
-]
+# Runtime (pyproject.toml es la fuente de verdad; esto lo espeja para Docker)
+pydantic>=2.7
+pydantic-settings>=2.4
+google-genai>=0.1.1
+fastapi>=0.115
+httpx>=0.27
+cryptography>=42
+apscheduler>=3.10
+groq>=0.4.0
+requests>=2.32
+temporalio>=1.9.0
 
-[project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "httpx", "ruff", "mypy", "pytest-cov"]
-serve = ["uvicorn[standard]>=0.30"]
+# Opcionales (descomentar si se usan)
+# supabase>=2.0.0
+# psycopg[binary]>=3.1.0
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-pythonpath = ["src"]
-testpaths = ["tests"]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.ruff]
-line-length = 100
-
-[tool.ruff.lint]
-select = [
-    "E9",
-    "F7",
-    "F821",
-    "F811",
-    "F823",
-    "B012",
-]
-
-[tool.mypy]
-strict = true
+# Dev (tests/lint) — normalmente cubierto por `pip install -e ".[dev]"`
+# pytest
+# pytest-asyncio
+# pytest-cov
+# ruff
+# mypy

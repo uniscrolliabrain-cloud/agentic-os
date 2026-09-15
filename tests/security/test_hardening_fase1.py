@@ -29,7 +29,7 @@ def _tenant_config(credentials: dict, enabled_capabilities: list | None = None) 
 def test_tenant_public_nunca_expone_credentials():
     cfg = _tenant_config(credentials={"hubspot": {"token": "secret-abc"}})
     pub = TenantConfigPublic.from_config(cfg)
-    assert "credentials" not in pub.model_fields
+    assert "credentials" not in type(pub).model_fields
     assert "token" not in pub.model_dump_json()
     assert "secret-abc" not in pub.model_dump_json()
     assert "hubspot" in pub.connected_providers  # solo el nombre, no el valor

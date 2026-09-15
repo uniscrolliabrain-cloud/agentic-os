@@ -44,8 +44,11 @@ class SupabaseEventLog(EventLogRepository):
             client = get_supabase()
             self._client = client.db
             return self._client
-        except Exception:
-            logger.debug("Supabase not available, falling back to JSONL")
+        except Exception as exc:
+            logger.error(
+                "Supabase client init failed: %s — falling back to JSONL",
+                exc, exc_info=True,
+            )
             return None
 
     def _table_ref(self) -> Any:

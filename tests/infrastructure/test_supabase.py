@@ -6,6 +6,20 @@ from unittest.mock import MagicMock, patch
 from agentic_os.infrastructure.supabase_client import SupabaseClient
 
 
+def _make_list_chain_mock(rows):
+    """Configura el chain select().eq().order().execute() de forma robusta."""
+    mock_resp = MagicMock()
+    mock_resp.data = rows
+    mock_execute = MagicMock(return_value=mock_resp)
+    mock_order = MagicMock()
+    mock_order.execute = mock_execute
+    mock_eq = MagicMock()
+    mock_eq.order = MagicMock(return_value=mock_order)
+    mock_select = MagicMock()
+    mock_select.eq = MagicMock(return_value=mock_eq)
+    return mock_select
+
+
 class TestSupabaseClient:
 
     def test_get_returns_singleton(self, monkeypatch):
@@ -61,8 +75,8 @@ class TestSupabaseEventLog:
     @patch("agentic_os.infrastructure.persistence.supabase.get_supabase")
     async def test_list_for_tenant(self, mock_get):
         mock_table = MagicMock()
-        mock_table.select.return_value.eq.return_value.order.return_value.execute.return_value = MagicMock(
-            data=[{"id": "1", "kind": "test", "entity_id": "x", "tenant_id": "t1", "payload": {}, "at": "2024-01-01T00:00:00", "actor_id": None, "correlation_id": None, "command_id": None}]
+        mock_table.select.return_value = _make_list_chain_mock(
+            [{"id": "1", "kind": "test", "entity_id": "x", "tenant_id": "t1", "payload": {}, "at": "2024-01-01T00:00:00", "actor_id": None, "correlation_id": None, "command_id": None}]
         )
         mock_db = MagicMock()
         mock_db.table.return_value = mock_table
@@ -71,4 +85,30 @@ class TestSupabaseEventLog:
         from agentic_os.infrastructure.persistence.supabase import SupabaseEventLog
         log = SupabaseEventLog()
         events = log.list_for_tenant("t1")
+        assert len(events) == 1
+        assert events[0].id == "1"
+        assert events[0].tenant_id == "t1"
+        mock_db.table.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.infrastructure.persistence.supabase.get_supabase")
+    async def test_list_all(self, mock_get):
+        mock_table = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.data = [
+            {"id": "1", "kind": "test", "entity_id": "x", "tenant_id": "t1", "payload": {}, "at": "2024-01-01T00:00:00", "actor_id": None, "correlation_id": None, "command_id": None}
+        ]
+        mock_execute = MagicMock(return_value=mock_resp)
+        mock_order = MagicMock()
+        mock_order.execute = mock_execute
+        mock_table.select.return_value.order.return_value = mock_order
+        mock_db = MagicMock()
+        mock_db.table.return_value = mock_table
+        mock_get.return_value = MagicMock(db=mock_db)
+
+        from agentic_os.infrastructure.persistence.supabase import SupabaseEventLog
+        log = SupabaseEventLog()
+        events = log.list_all()
+        assert len(events) == 1
+        assert events[0].id == "1"
         mock_db.table.assert_called_once()
