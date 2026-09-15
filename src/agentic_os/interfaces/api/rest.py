@@ -1,11 +1,13 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
@@ -81,18 +83,29 @@ _API_KEY_HEADER = "X-Api-Key"
 _ADMIN_KEY_HEADER = "X-Admin-Key"
 _AUTH_HEADER = "Authorization"
 
+logger = logging.getLogger(__name__)
 
-def _verify_supabase_jwt(auth_header: Optional[str]) -> Optional[dict]:
-    """Verifica JWT RS256 de Supabase. Devuelve claims o None."""
+
+class _JWTState(str, Enum):
+    NO_TOKEN = "no_token"
+    VALID = "valid"
+    INVALID = "invalid"
+
+
+def _verify_supabase_jwt(auth_header: Optional[str]) -> Tuple[Optional[dict], _JWTState]:
+    """Verifica JWT RS256 de Supabase. Devuelve (claims, estado)."""
     if not auth_header or not auth_header.startswith("Bearer "):
-        return None
+        return None, _JWTState.NO_TOKEN
     token = auth_header[7:]
     try:
         from ...infrastructure.auth.jwt_verifier import get_verifier
+
         claims = get_verifier().verify(token)
-        return claims.model_dump()
-    except Exception:
-        return None
+        logger.info("Supabase JWT verificado para tenant_id=%s", claims.tenant_id)
+        return claims.model_dump(), _JWTState.VALID
+    except Exception as exc:
+        logger.warning("Supabase JWT inválido/expirado: %s", exc)
+        return None, _JWTState.INVALID
 
 # tenant virtual por defecto para peticiones anónimas (back-compat en dev)
 _DEFAULT_SCOPE = "system"
@@ -111,16 +124,28 @@ def tenant_scope(
       2. X-Tenant-Id + X-Api-Key (legacy)
       3. Sin cabecera -> scope "system" (anon)
     """
-    claims = _verify_supabase_jwt(authorization)
+    claims, jwt_state = _verify_supabase_jwt(authorization)
+    if jwt_state == _JWTState.INVALID:
+        raise HTTPException(status_code=401, detail="JWT inválido o expirado")
     if claims:
-        tenant_id = claims.get("tenant_id") or claims.get("user_metadata", {}).get("tenant_id")
+        user_metadata = claims.get("user_metadata")
+        if isinstance(user_metadata, dict):
+            tenant_id = claims.get("tenant_id") or user_metadata.get("tenant_id")
+        else:
+            tenant_id = claims.get("tenant_id")
         if tenant_id:
             tenant = _tenant_registry.get(str(tenant_id))
             if tenant is not None:
                 return tenant.id
-        return str(tenant_id or _DEFAULT_SCOPE) if tenant_id else _DEFAULT_SCOPE
+            logger.warning(
+                "JWT tenant_id '%s' no registrado; usando scope por defecto",
+                tenant_id,
+            )
+        return _DEFAULT_SCOPE
 
     if not x_tenant_id:
+        if settings.admin_api_key and x_admin_key == settings.admin_api_key:
+            return _DEFAULT_SCOPE
         return _DEFAULT_SCOPE
     tenant = _tenant_registry.get(x_tenant_id)
     if tenant is None:
@@ -870,3 +895,49 @@ def get_artifact(tenant_id: str, artifact_id: str, scope: str = Depends(tenant_s
             with open(p, "r", encoding="utf-8") as fh:
                 return json.load(fh)
     raise HTTPException(status_code=404, detail="Artefacto no encontrado")
+
+# ---------------------------------------------------------------- COGNITION ----
+# Memoria persistente por (tenant, agente) - audit paso 3
+
+try:
+    from ...cognition.memory import CognitionRegistry
+    _cognition_registry = CognitionRegistry()
+except Exception:
+    _cognition_registry = None
+
+
+@app.get("/api/v1/agents/{agent_id}/cognition")
+def get_agent_cognition(agent_id: str, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
+    """Vista de las 4 memorias del agente, aisladas por tenant de cabecera.
+
+    - tenant viene de X-Tenant-Id / JWT (tenant_scope)
+    - agent_id se valida contra regex del CognitionStore (fail-closed)
+    - Nunca expone memoria de otro tenant
+    """
+    if _cognition_registry is None:
+        raise HTTPException(status_code=503, detail="CognitionStore no disponible")
+    try:
+        store = _cognition_registry.for_agent(scope, agent_id)
+        return store.snapshot()
+    except Exception as e:
+        # Validacion de id invalido -> 400, resto -> 500
+        msg = str(e)
+        if "inválido" in msg or "invalido" in msg.lower():
+            raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=500, detail=f"Error leyendo cognicion: {msg[:300]}")
+
+
+@app.get("/api/v1/agents/{agent_id}/cognition/context")
+def get_agent_cognition_context(agent_id: str, q: str = "", k: int = 5, scope: str = Depends(tenant_scope)) -> Dict[str, Any]:
+    """Contexto consolidado para inyeccion en prompt (working+episodic+semantic+procedural)."""
+    if _cognition_registry is None:
+        raise HTTPException(status_code=503, detail="CognitionStore no disponible")
+    try:
+        store = _cognition_registry.for_agent(scope, agent_id)
+        return store.context(query=q, k=k)
+    except Exception as e:
+        msg = str(e)
+        if "inválido" in msg or "invalido" in msg.lower():
+            raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=500, detail=f"Error leyendo contexto: {msg[:300]}")
+

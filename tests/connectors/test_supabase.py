@@ -66,9 +66,10 @@ class TestSupabaseConnector:
     @pytest.mark.asyncio
     @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
     async def test_storage_upload(self, mock_get):
-        mock_client = MagicMock()
+        mock_bucket = MagicMock()
         mock_storage = MagicMock()
-        type(mock_storage).from_ = MagicMock()
+        getattr(mock_storage, "from").return_value = mock_bucket
+        mock_client = MagicMock()
         mock_client.storage = mock_storage
         mock_get.return_value = mock_client
         conn = SupabaseConnector(
@@ -81,13 +82,17 @@ class TestSupabaseConnector:
         )
         result = await conn.execute(cmd)
         assert result.ok is True
+        getattr(mock_storage, "from").assert_called_once_with("my-bucket")
+        mock_bucket.upload.assert_called_once_with("data/file.txt", b"content")
 
     @pytest.mark.asyncio
     @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
     async def test_storage_download(self, mock_get):
-        mock_client = MagicMock()
+        mock_bucket = MagicMock()
+        mock_bucket.download.return_value = b"file-content"
         mock_storage = MagicMock()
-        type(mock_storage).from_ = MagicMock()
+        getattr(mock_storage, "from").return_value = mock_bucket
+        mock_client = MagicMock()
         mock_client.storage = mock_storage
         mock_get.return_value = mock_client
         conn = SupabaseConnector(
@@ -100,6 +105,8 @@ class TestSupabaseConnector:
         )
         result = await conn.execute(cmd)
         assert result.ok is True
+        assert result.output["data"] == b"file-content"
+        mock_bucket.download.assert_called_once_with("p")
 
     @pytest.mark.asyncio
     @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
@@ -155,6 +162,7 @@ class TestSupabaseConnector:
         )
         result = await conn.execute(cmd)
         assert result.ok is True
+        assert result.output["deleted"] == 1
 
     @pytest.mark.asyncio
     @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
@@ -199,3 +207,87 @@ class TestSupabaseConnector:
         result = await conn.execute(cmd)
         assert result.ok is True
         assert len(result.output["tables"]) == 2
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_storage_upload_sin_file(self, mock_get):
+        mock_client = MagicMock()
+        mock_get.return_value = mock_client
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        cmd = Command(
+            capability="storage.file.upload",
+            params={"bucket": "b", "path": "p"},
+        )
+        result = await conn.execute(cmd)
+        assert result.ok is False
+        assert result.error_type == "INVALID_PARAMS"
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_db_query_no_dsn(self, mock_get):
+        mock_client = MagicMock()
+        mock_get.return_value = mock_client
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        cmd = Command(
+            capability="db.query",
+            params={"query": "SELECT 1"},
+        )
+        result = await conn.execute(cmd)
+        assert result.ok is False
+        assert result.error_type == "CONNECTOR_NOT_CONFIGURED"
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    @patch("psycopg.connect")
+    async def test_db_query_success(self, mock_connect, mock_get):
+        mock_cursor = MagicMock()
+        col_id = MagicMock()
+        col_id.name = "id"
+        col_name = MagicMock()
+        col_name.name = "name"
+        mock_cursor.description = [col_id, col_name]
+        mock_cursor.fetchall.return_value = [(1, "test"), (2, "test2")]
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_connect.return_value = mock_conn
+
+        mock_client = MagicMock()
+        mock_get.return_value = mock_client
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key", "dsn": "postgresql://test"},
+        )
+        cmd = Command(
+            capability="db.query",
+            params={"query": "SELECT id, name FROM users"},
+        )
+        result = await conn.execute(cmd)
+        assert result.ok is True
+        assert len(result.output["data"]) == 2
+        assert result.output["data"][0]["id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("agentic_os.connectors.providers.supabase.SupabaseConnector._get_client")
+    async def test_unknown_storage_capability(self, mock_get):
+        mock_client = MagicMock()
+        mock_get.return_value = mock_client
+        conn = SupabaseConnector(
+            connected=True,
+            credentials={"url": "https://test.supabase.co", "key": "test-key"},
+        )
+        cmd = Command(
+            capability="storage.unknown.op",
+            params={},
+        )
+        result = await conn.execute(cmd)
+        assert result.ok is False
+        assert result.error_type == "UNSUPPORTED_OPERATION"

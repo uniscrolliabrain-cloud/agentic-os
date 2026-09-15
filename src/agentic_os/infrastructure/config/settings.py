@@ -120,13 +120,24 @@ class Settings(BaseSettings):
                 "Sin ella, las credenciales de conectores se cifran con una clave "
                 "por proceso y no sobreviven a un reinicio. Ver docs/PRE_PRODUCTION_CHECKLIST.md."
             )
+        if self.eventlog_impl == "supabase":
+            if not self.supabase_url and not self.supabase_project_url:
+                raise ValueError(
+                    "SUPABASE_URL (o SUPABASE_PROJECT_URL) y SUPABASE_KEY son obligatorios "
+                    "cuando EVENTLOG_IMPL=supabase."
+                )
+            if not self.supabase_key:
+                raise ValueError("SUPABASE_KEY es obligatorio cuando EVENTLOG_IMPL=supabase.")
 
     def __repr__(self) -> str:
         redacted_markers = ("key", "secret", "token", "password", "dsn")
-        fields = {
-            name: ("***REDACTED***" if value and any(m in name for m in redacted_markers) else value)
-            for name, value in self.model_dump().items()
-        }
+        fields = {}
+        for name in type(self).model_fields:
+            value = getattr(self, name, None)
+            if value and any(m in name.lower() for m in redacted_markers):
+                fields[name] = "***REDACTED***"
+            else:
+                fields[name] = value
         return f"Settings({fields})"
 
     __str__ = __repr__

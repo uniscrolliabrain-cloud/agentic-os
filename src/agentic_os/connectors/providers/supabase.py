@@ -151,11 +151,11 @@ class SupabaseConnector(Connector):
 
         try:
             if capability.startswith("storage."):
-                return await self._exec_storage(client, capability, params)
+                return await self._exec_storage(client, capability, params, command)
             elif capability.startswith("auth."):
-                return await self._exec_auth(client, capability, params)
+                return await self._exec_auth(client, capability, params, command)
             elif capability.startswith("db."):
-                return await self._exec_db(client, capability, params)
+                return await self._exec_db(client, capability, params, command)
             else:
                 return CommandResult(
                     ok=False,
@@ -168,6 +168,13 @@ class SupabaseConnector(Connector):
                 )
         except ConnectorError:
             raise
+        except ValueError as exc:
+            logger.warning("Validation error: %s", exc)
+            return CommandResult(
+                ok=False, error=str(exc), error_type="INVALID_PARAMS",
+                execution_id=command.execution_id, connector_id=self.connector_id,
+                provider=self.provider, capability=capability,
+            )
         except Exception as exc:
             logger.exception("Supabase execute failed")
             return CommandResult(
@@ -180,7 +187,7 @@ class SupabaseConnector(Connector):
                 capability=capability,
             )
 
-    async def _exec_storage(self, client: Any, capability: str, params: Dict[str, Any]) -> CommandResult:
+    async def _exec_storage(self, client: Any, capability: str, params: Dict[str, Any], command: Command) -> CommandResult:
         storage = client.storage
         _storage_from = getattr(storage, "from")
 
@@ -188,6 +195,8 @@ class SupabaseConnector(Connector):
             bucket = params.get("bucket", "")
             path = params.get("path", "")
             file_obj = params.get("file")
+            if file_obj is None:
+                raise ValueError("file es obligatorio")
             _storage_from(bucket).upload(path, file_obj)
             return CommandResult(ok=True, output={"path": path, "bucket": bucket}, connector_id=self.connector_id, provider=self.provider, capability=capability)
         elif capability == "storage.file.download":
@@ -210,7 +219,16 @@ class SupabaseConnector(Connector):
             storage.create_bucket(bucket)
             return CommandResult(ok=True, output={"bucket": bucket}, connector_id=self.connector_id, provider=self.provider, capability=capability)
         elif capability == "storage.bucket.list":
-            buckets = storage.list_buckets()
+            try:
+                buckets = storage.list_buckets()
+            except Exception as exc:
+                logger.error("Supabase bucket list failed: %s", exc)
+                return CommandResult(
+                    ok=False, error=f"Error al listar buckets: {exc}",
+                    error_type="PROVIDER_ERROR",
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
             return CommandResult(ok=True, output={"buckets": buckets}, connector_id=self.connector_id, provider=self.provider, capability=capability)
         elif capability == "storage.folder.create":
             bucket = params.get("bucket", "")
@@ -220,7 +238,8 @@ class SupabaseConnector(Connector):
         elif capability == "storage.folder.list":
             bucket = params.get("bucket", "")
             prefix = params.get("prefix", "")
-            res = _storage_from(bucket).list(prefix, {"limit": params.get("limit", 100)})
+            folder_prefix = (prefix.rstrip("/") + "/") if prefix else ""
+            res = _storage_from(bucket).list(folder_prefix, {"limit": params.get("limit", 100)})
             return CommandResult(ok=True, output={"items": res}, connector_id=self.connector_id, provider=self.provider, capability=capability)
         elif capability == "storage.file.list":
             bucket = params.get("bucket", "")
@@ -229,7 +248,7 @@ class SupabaseConnector(Connector):
             return CommandResult(ok=True, output={"items": res}, connector_id=self.connector_id, provider=self.provider, capability=capability)
         return CommandResult(ok=False, error=f"Unknown storage capability: {capability}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
 
-    async def _exec_auth(self, client: Any, capability: str, params: Dict[str, Any]) -> CommandResult:
+    async def _exec_auth(self, client: Any, capability: str, params: Dict[str, Any], command: Command) -> CommandResult:
         auth = client.auth
 
         if capability == "auth.signin.email":
@@ -262,11 +281,66 @@ class SupabaseConnector(Connector):
             return CommandResult(ok=True, output={"claims": claims.model_dump()}, connector_id=self.connector_id, provider=self.provider, capability=capability)
         return CommandResult(ok=False, error=f"Unknown auth capability: {capability}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
 
-    async def _exec_db(self, client: Any, capability: str, params: Dict[str, Any]) -> CommandResult:
+    async def _exec_db(self, client: Any, capability: str, params: Dict[str, Any], command: Command) -> CommandResult:
         db = client.db
 
         if capability == "db.query":
-            return CommandResult(ok=False, error="db.query no soportado via PostgREST. Usa db.record.read con filtros.", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
+            sql = params.get("query") or params.get("sql")
+            if not sql:
+                return CommandResult(
+                    ok=False, error="Parámetro 'query' es obligatorio para db.query",
+                    error_type="INVALID_PARAMS",
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
+            try:
+                import psycopg
+            except ImportError:
+                return CommandResult(
+                    ok=False, error="psycopg no instalado para db.query",
+                    error_type="PROVIDER_ERROR",
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
+            dsn = self._credentials.get("dsn") or self._config.get("dsn")
+            if not dsn:
+                try:
+                    from ...infrastructure.config.settings import settings as _s
+                    dsn = _s.supabase_dsn or _s.postgres_dsn
+                except Exception:
+                    dsn = None
+            if not dsn:
+                return CommandResult(
+                    ok=False,
+                    error="DSN no configurada para db.query (SUPABASE_DSN o POSTGRES_DSN)",
+                    error_type="CONNECTOR_NOT_CONFIGURED",
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
+            try:
+                with psycopg.connect(dsn, connect_timeout=10) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql)
+                        if cur.description:
+                            columns = [d.name for d in cur.description]
+                            rows = cur.fetchall()
+                            data = [dict(zip(columns, r)) for r in rows]
+                        else:
+                            conn.commit()
+                            data = {"affected": cur.rowcount}
+                return CommandResult(
+                    ok=True, output={"data": data},
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
+            except Exception as exc:
+                logger.exception("db.query SQL execution failed")
+                return CommandResult(
+                    ok=False, error=f"Error ejecutando SQL: {exc}",
+                    error_type="PROVIDER_ERROR",
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
         elif capability == "db.record.create":
             values = params.get("values", {})
             res = db.table(params.get("table", "")).insert(values).execute()
@@ -298,6 +372,12 @@ class SupabaseConnector(Connector):
             try:
                 tables = db.table("information_schema.tables").select("table_name").execute()
                 return CommandResult(ok=True, output={"tables": tables.data}, connector_id=self.connector_id, provider=self.provider, capability=capability)
-            except Exception:
-                return CommandResult(ok=True, output={"tables": []}, connector_id=self.connector_id, provider=self.provider, capability=capability)
+            except Exception as exc:
+                logger.error("Supabase schema inspect failed: %s", exc)
+                return CommandResult(
+                    ok=False, error=f"Error inspeccionando schema: {exc}",
+                    error_type="PROVIDER_ERROR",
+                    execution_id=command.execution_id, connector_id=self.connector_id,
+                    provider=self.provider, capability=capability,
+                )
         return CommandResult(ok=False, error=f"Unknown db capability: {capability}", error_type="UNSUPPORTED_OPERATION", connector_id=self.connector_id, provider=self.provider, capability=capability)
