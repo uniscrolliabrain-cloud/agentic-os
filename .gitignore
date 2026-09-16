@@ -73,11 +73,24 @@ tests/MASTER_PLAN.MD
 estrategia_consolidada.md
 ontology_prompt_final.md
 ontology_prompt_finalv2.md
-data/
+# data/ ignorado por defecto; las excepciones de abajo re-incluyen solo lo versionado.
+# NOTA git: no se puede re-incluir un fichero si su directorio padre esta excluido,
+# por eso se ignoran contenidos (data/**) y se re-excluyen los directorios intermedios.
+data/**
+# --- directorios intermedios re-incluidos para que las excepciones funcionen ---
+!data/tenants/
+!data/policies/
 # Excepciones para tenant bor-agencia (MINIPROMPT 3.1)
 !data/tenants/registry.json
+!data/tenants/registry.example.json
 !data/policies/bor-agencia.json
 !data/tenants/bor-agencia/
+!data/tenants/bor-agencia/**
+# tenant agentic-compiler (compilador de tenants): su policy y su knowledge base
+# son la persona del compilador, no datos de cliente.
+!data/policies/agentic-compiler.json
+!data/tenants/agentic-compiler/
+!data/tenants/agentic-compiler/**
 
 # ---------- Local runtime logs ----------
 *.log
@@ -86,8 +99,13 @@ data/
 
 # --- Higiene del repo (CHUNK 2) ---
 .scratch/
-data/tenants/*.json
+# (regla antigua eliminada: data/tenants/*.json pisaba las excepciones de tenants versionados)
 !data/tenants/registry.example.json
+# tenant agentic-compiler (compilador de tenants): su policy y su knowledge base
+# son la persona del compilador, no datos de cliente.
+!data/policies/agentic-compiler.json
+!data/tenants/agentic-compiler/
+!data/tenants/agentic-compiler/**
 data/eventlog/*.jsonl
 data/idempotency/**
 data/conversations/*.json
