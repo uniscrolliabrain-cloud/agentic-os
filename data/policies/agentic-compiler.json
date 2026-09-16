@@ -1,0 +1,44 @@
+{
+  "id": "agentic-compiler",
+  "name": "Agentic Compiler - policy de compilador de tenants",
+  "version": 1,
+  "rules": [
+    {
+      "id": "c1",
+      "description": "Leer archivos del repo (modo PLAN)",
+      "capability": "repo.file.read",
+      "effect": "allow"
+    },
+    {
+      "id": "c2",
+      "description": "Listar directorios del repo (modo PLAN)",
+      "capability": "repo.file.list",
+      "effect": "allow"
+    },
+    {
+      "id": "c3",
+      "description": "Buscar en el repo (modo PLAN)",
+      "capability": "repo.search",
+      "effect": "allow"
+    },
+    {
+      "id": "c4",
+      "description": "Generar borrador de blueprint: produce artefactos, no efectos externos",
+      "capability": "codegen.blueprint.generate",
+      "effect": "allow"
+    },
+    {
+      "id": "c5",
+      "description": "Escribir en el repo: aprueba un humano (director) antes de tocar nada",
+      "capability": "repo.file.write",
+      "effect": "require_approval",
+      "requires_roles": ["director"]
+    },
+    {
+      "id": "c6",
+      "description": "Red de seguridad: todo lo no permitido, denegado",
+      "capability": "*",
+      "effect": "deny"
+    }
+  ]
+}

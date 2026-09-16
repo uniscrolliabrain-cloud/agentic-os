@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from ...cognition.planning.intent import Intent
 from ...cognition.skills.library import SKILLS
+from ...domains.compiler.entities import TenantBlueprint, TenantIdea, idea_keywords
 from ...execution.executor import Executor
 from ...execution.tools import build_default_registry
 from ...infrastructure.config.settings import settings
@@ -389,6 +390,11 @@ ACTION_BY_KIND: Dict[str, str] = {
     # web
     "web_scrape": "web_scrape",
     "scrape_web": "web_scrape",
+    # repo (FASE 3 del agente compilador: tools read-only del repo)
+    "repo_scan": "repo_scan",
+    "repo_file_list": "repo_file_list",
+    "repo_file_read": "repo_file_read",
+    "repo_search": "repo_search",
 }
 
 def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
@@ -396,6 +402,11 @@ def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
 
     Determinista: lookup exacto en ACTION_BY_KIND (normalizado). Un kind
     desconocido → None (no se ejecuta nada; fail-closed).
+
+    Nota (FASE 3): los kinds ``repo_*`` son SOLO lectura y además están
+    guardados por la ``Policy`` (``repo.file.read``/``list``/``search`` →
+    allow). El mapeo no concede nada por sí mismo: sin regla de policy, el
+    Executor no llega a ejecutar la tool.
     """
     return ACTION_BY_KIND.get((kind or "").strip().lower())
 
@@ -941,3 +952,667 @@ def get_agent_cognition_context(agent_id: str, q: str = "", k: int = 5, scope: s
             raise HTTPException(status_code=400, detail=msg)
         raise HTTPException(status_code=500, detail=f"Error leyendo contexto: {msg[:300]}")
 
+
+# ---------------------------------------------------------------- COMPILER ----
+# Fase 2 de PLAN_CLINE_AGENTE_COMPILADOR.md: MVP del chat del tenant
+# `agentic-compiler`. El compilador trabaja en **modo PLAN**: lee y propone,
+# nunca escribe. Toda capability pasa por la Policy antes de darse por buena y
+# el unico camino a escritura es `repo.file.write` resuelto por Gate 1 humano.
+
+_COMPILER_SLUG = "agentic-compiler"
+_COMPILER_MODE = "plan"
+_COMPILER_WRITE_CAPABILITY = "repo.file.write"
+_COMPILER_BLUEPRINT_CAPABILITY = "codegen.blueprint.generate"
+
+# Roles del operador del compilador (TenantContext usa ["director"] por defecto).
+# Sin rol, la regla de `repo.file.write` no casa y la policy cae en deny.
+_COMPILER_OPERATOR_ROLES: Tuple[str, ...] = ("director",)
+
+# Fases que todo blueprint propone (esqueleto estable y comparable entre ideas).
+_COMPILER_PHASES: Tuple[str, ...] = (
+    "Fase 1 - alta del tenant (registro, policy minima, entidades)",
+    "Fase 2 - chat del tenant en modo PLAN",
+    "Fase 3 - tools y capacidades del compilador",
+    "Fase 4 - pipelines de compilacion",
+    "Fase 5 - policy completa con path-guard",
+    "Fase 6 - knowledge base del tenant nuevo",
+    "Fase 7 - sandbox y CI del codigo generado",
+)
+
+# Catalogo deterministico: (keywords que activan, dominio, slug semilla,
+# entidades, capabilities). El LLM puede proponer, pero sin API key el
+# esqueleto sale de aqui, de modo que el modo offline es util y reproducible
+# (nunca una respuesta vacia).
+_COMPILER_CATALOG: Tuple[
+    Tuple[Tuple[str, ...], str, str, Tuple[str, ...], Tuple[str, ...]], ...
+] = (
+    (
+        ("dental", "clinica", "clinic", "dentista", "odontolog", "podolog"),
+        "clinic",
+        "clinica",
+        (
+            "clinic.patient",
+            "clinic.appointment",
+            "clinic.treatment",
+            "clinic.invoice",
+        ),
+        (
+            "calendar.event.create",
+            "calendar.event.read",
+            "crm.contact.create",
+            "crm.contact.read",
+            "whatsapp.message.send",
+            "payment.link.create",
+        ),
+    ),
+    (
+        ("agencia", "marketing", "seo", "web", "leads", "publicidad"),
+        "agencia",
+        "agencia-digital",
+        (
+            "agencia.client",
+            "agencia.lead",
+            "agencia.deal",
+            "agencia.quote",
+        ),
+        (
+            "web.seo.audit",
+            "web.seo.keywords",
+            "crm.lead.create",
+            "crm.deal.create",
+            "social.post.publish",
+            "payment.link.create",
+        ),
+    ),
+    (
+        ("tienda", "ecommerce", "e-commerce", "shop", "pedidos", "ventas"),
+        "shop",
+        "tienda-online",
+        (
+            "shop.product",
+            "shop.order",
+            "shop.customer",
+            "shop.invoice",
+        ),
+        (
+            "crm.contact.create",
+            "crm.contact.read",
+            "payment.checkout.create",
+            "whatsapp.message.send",
+            "calendar.event.create",
+        ),
+    ),
+)
+
+# Familia por defecto si ninguna keyword del catalogo casa:
+# (dominio, slug semilla, entidades, capabilities).
+_COMPILER_DEFAULT_FAMILY: Tuple[str, str, Tuple[str, ...], Tuple[str, ...]] = (
+    "generic",
+    "tenant-nuevo",
+    ("core.entity", "core.record", "core.task"),
+    ("crm.contact.create", "crm.contact.read", "calendar.event.create"),
+)
+
+# Palabras de relleno que no aportan al nombre visible del tenant propuesto.
+_COMPILER_GENERIC_WORDS: frozenset = frozenset(
+    {
+        "agentico", "agentic", "sistema", "system", "gestion", "gestionar",
+        "idea", "proyecto", "empresa", "negocio", "plataforma", "quiero",
+    }
+)
+
+# Intents de ESCRITURA/PUBLICACION que el modo PLAN descarta ANTES de la policy
+# (el LLM puede proponerlos; el compilador jamas los ejecuta sin Gate 1).
+_COMPILER_WRITE_INTENTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    (
+        "repo.file.write",
+        ("escribe", "escribir", "crea el fichero", "crear el fichero", "modifica",
+         "edita el fichero", "aplica los cambios", "aplicalo", "aplícalo"),
+    ),
+    ("git.commit", ("haz commit", "commitea", "commitear", "haz el commit")),
+    ("git.push", ("haz push", "haz el push", "sube la rama", "sube el codigo")),
+    ("git.pr.create", ("abre el pr", "abre una pr", "haz el pr", "pull request")),
+)
+
+# Segmentos de capability sin efectos externos: se sugieren como `allow`.
+_COMPILER_READONLY_SUFFIXES: Tuple[str, ...] = (
+    ".read", ".list", ".search", ".stat", ".audit", ".keywords",
+)
+
+# Segmentos que SIEMPRE requieren aprobacion humana (invariante del kernel).
+_COMPILER_APPROVAL_SEGMENTS: frozenset = frozenset({"delete", "publish", "push", "create", "send"})
+
+
+class CompilerChatRequest(BaseModel):
+    """Peticion de chat del compilador (nunca trae el tenant: va por cabecera)."""
+
+    message: str
+    conversation_id: Optional[str] = None
+    tenant_id: Optional[str] = None  # DEPRECATED: el tenant se resuelve por cabecera
+
+
+class CompilerChatResponse(BaseModel):
+    """Respuesta en modo PLAN: propuesta + gate, jamas una ejecucion."""
+
+    reply: str
+    mode: str = _COMPILER_MODE
+    tenant_id: str
+    provider: str = "offline"
+    blueprint: Optional[Dict[str, Any]] = None
+    gate: Optional[str] = None
+    write_decision: Optional[str] = None
+    discarded_intents: List[str] = []
+    conversation_id: Optional[str] = None
+    event_id: Optional[str] = None
+
+
+# Persona embebida: se usa si el .md del tenant no esta disponible (fail-safe,
+# la conversacion nunca se queda sin system instruction).
+_COMPILER_PERSONA_FALLBACK = (
+    "Eres el arquitecto-compilador de tenants de Agentic OS. Tu producto son "
+    "tenants nuevos, no software. El LLM solo propone; la Policy decide; el "
+    "Executor ejecuta; el EventLog audita. Estas en modo PLAN: lees y consultas "
+    "el repo, pero NO escribes nada. Devuelves un TenantBlueprint propuesto "
+    "(entidades, capabilities, policy sugerida, fases) y preguntas por el Gate 1. "
+    "Nunca tocas src/agentic_os/kernel/**, docs/INVARIANTS.md ni main."
+)
+
+
+def _compiler_persona() -> str:
+    """System instruction del compilador: su .md de knowledge o el fallback."""
+    path = TENANTS_DATA_DIR / _COMPILER_SLUG / "knowledge" / "system_compiler.md"
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return _COMPILER_PERSONA_FALLBACK
+    return text or _COMPILER_PERSONA_FALLBACK
+
+
+# Caracteres permitidos en identificadores que acaban en nombre de fichero.
+_COMPILER_ID_CHARS: frozenset = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+)
+
+
+def _compiler_safe_id(value: str) -> bool:
+    """True si el identificador es seguro como nombre de fichero.
+
+    Se comprueba caracter a caracter (sin regex ni rutas): nada de separadores,
+    puntos ni secuencias de traversal.
+    """
+    if not value or len(value) > 64 or value in (".", ".."):
+        return False
+    return all(ch in _COMPILER_ID_CHARS for ch in value)
+
+
+def _compiler_chat_dir(scope: str) -> Path:
+    """Conversaciones del compilador: data/tenants/{scope}/chat/ (aisladas)."""
+    d = TENANTS_DATA_DIR / scope / "chat"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _compiler_chat_path(scope: str, conv_id: str) -> Path:
+    """Ruta de una conversacion, rechazando ids con path traversal (fail-closed)."""
+    if not _compiler_safe_id(conv_id):
+        raise HTTPException(status_code=400, detail="conversation_id invalido")
+    return _compiler_chat_dir(scope) / f"{conv_id}.json"
+
+
+def _compiler_load_conversation(scope: str, conv_id: str) -> Dict[str, Any]:
+    path = _compiler_chat_path(scope, conv_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Conversacion no encontrada")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(status_code=404, detail="Conversacion no encontrada")
+
+
+def _compiler_save_conversation(scope: str, conv: Dict[str, Any]) -> None:
+    conv["updated_at"] = now_utc().isoformat()
+    path = _compiler_chat_path(scope, conv["id"])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(conv, fh, ensure_ascii=False, indent=2)
+
+
+def _compiler_suggest_effect(capability: str) -> str:
+    """Efecto SUGERIDO para una capability del tenant nuevo (determinista).
+
+    Es una propuesta de policy, no una decision: el tenant nuevo resolvera la
+    suya. Las lecturas se sugieren `allow`; lo que publica, borra o sale al
+    exterior exige aprobacion humana (invariante del kernel); el resto, deny.
+    """
+    cap = (capability or "").strip().lower()
+    if not cap:
+        return "deny"
+    segments = {seg for seg in cap.split(".") if seg}
+    if segments & _COMPILER_APPROVAL_SEGMENTS:
+        return "require_approval"
+    if cap.endswith(_COMPILER_READONLY_SUFFIXES):
+        return "allow"
+    return "require_approval"
+
+
+def _compiler_discarded_intents(message: str) -> List[str]:
+    """Intents de escritura/publicacion que el modo PLAN descarta sin ejecutar."""
+    text = (message or "").lower()
+    return [
+        kind
+        for kind, triggers in _COMPILER_WRITE_INTENTS
+        if any(trigger in text for trigger in triggers)
+    ]
+
+
+def _compiler_llm() -> Optional[Any]:
+    """Provider para el compilador: solo si hay LLM real.
+
+    El Mock del director responde con el JSON de Intent del orquestador, que no
+    sirve como arquitecto; en ese caso se devuelve None y el endpoint usa el
+    esqueleto offline determinista (el compilador funciona sin API key).
+    """
+    if isinstance(_llm, MockLLMProvider):
+        return None
+    return _llm
+
+
+def _compiler_catalog_match(
+    idea: str,
+) -> Tuple[str, str, Tuple[str, ...], Tuple[str, ...]]:
+    """Familia de negocio mas probable de la idea (determinista, sin LLM).
+
+    Devuelve ``(dominio, slug semilla, entidades, capabilities)``.
+    """
+    tokens = set(idea_keywords(idea, limit=60))
+    for keywords, domain, slug, entities, capabilities in _COMPILER_CATALOG:
+        if tokens & set(keywords):
+            return domain, slug, entities, capabilities
+    return _COMPILER_DEFAULT_FAMILY
+
+
+def _compiler_tenant_name(idea: str, slug_seed: str) -> str:
+    """Nombre visible del tenant propuesto (determinista, sin LLM).
+
+    Parte del slug semilla de la familia y le añade la primera palabra
+    significativa de la idea («clinica» + «dental» -> «Clinica Dental»).
+    """
+    base = slug_seed.replace("-", " ").capitalize()
+    head = slug_seed.split("-")[0]
+    words = [
+        w
+        for w in idea_keywords(idea, limit=12)
+        if w not in _COMPILER_GENERIC_WORDS and w != head
+    ]
+    if words:
+        return f"{base} {words[0].capitalize()}"
+    return base
+
+
+def _compiler_build_blueprint(
+    idea_nl: str,
+    tenant_id: str,
+    *,
+    entities: Optional[List[str]] = None,
+    capabilities: Optional[List[str]] = None,
+    domain: str = "generic",
+    tenant_name: Optional[str] = None,
+    slug: Optional[str] = None,
+    mode: str = _COMPILER_MODE,
+) -> TenantBlueprint:
+    """Construye el TenantBlueprint estricto (fuente unica de verdad).
+
+    La entidad valida fail-closed: si algo no cuadra, la construccion lanza y
+    el endpoint responde con el esqueleto offline en lugar de inventar datos.
+    """
+    if entities is None or capabilities is None:
+        family_domain, family_slug, family_entities, family_capabilities = (
+            _compiler_catalog_match(idea_nl)
+        )
+        if entities is None:
+            entities = list(family_entities)
+        if capabilities is None:
+            capabilities = list(family_capabilities)
+        if slug is None:
+            slug = family_slug
+        if domain == "generic":
+            domain = family_domain
+    idea = TenantIdea(tenant_id=tenant_id, idea_nl=idea_nl, domain_hint=domain)
+    slug = slug or idea.slug_hint or "tenant-nuevo"
+    return TenantBlueprint(
+        tenant_id=tenant_id,
+        idea_id=idea.id,
+        idea_nl=idea.idea_normalizada,
+        slug=slug,
+        tenant_name=tenant_name or _compiler_tenant_name(idea_nl, slug),
+        domain=domain,
+        entities=list(entities),
+        capabilities=list(capabilities),
+        policy={c: _compiler_suggest_effect(c) for c in capabilities},
+        phases=list(_COMPILER_PHASES),
+        mode=mode,
+    )
+
+
+def _compiler_offline_blueprint(idea_nl: str, tenant_id: str) -> TenantBlueprint:
+    """Esqueleto deterministico sin LLM: el compilador funciona sin API key."""
+    return _compiler_build_blueprint(idea_nl, tenant_id)
+
+
+# Contrato de salida del LLM: JSON estricto, sin markdown ni adornos.
+_COMPILER_LLM_CONTRACT = (
+    "Responde EXCLUSIVAMENTE con un objeto JSON con las claves: "
+    '"slug" (minusculas y guiones), "tenant_name", "domain", "entities" (lista), '
+    '"capabilities" (lista). Sin markdown, sin explicaciones, sin texto adicional.'
+)
+
+
+def _compiler_llm_blueprint(llm: Any, idea_nl: str, tenant_id: str) -> TenantBlueprint:
+    """Blueprint propuesto por el LLM real, normalizado y validado.
+
+    El LLM propone; el kernel valida. Una salida que no valide se descarta en
+    el caller y se cae al esqueleto offline (fail-closed, nunca basura).
+    """
+    raw = llm.generate(
+        prompt=idea_nl,
+        system_instruction=_compiler_persona() + "\n\n" + _COMPILER_LLM_CONTRACT,
+    )
+    data = json.loads(raw or "{}")
+    if not isinstance(data, dict):
+        raise ValueError("el LLM no devolvio un objeto JSON")
+    entities = [str(e).strip() for e in (data.get("entities") or []) if str(e).strip()]
+    capabilities = [
+        str(c).strip() for c in (data.get("capabilities") or []) if str(c).strip()
+    ]
+    if not entities or not capabilities:
+        raise ValueError("el LLM no propuso entidades/capabilities utilizables")
+    return _compiler_build_blueprint(
+        idea_nl,
+        tenant_id,
+        entities=entities,
+        capabilities=capabilities,
+        domain=str(data.get("domain") or "generic").strip() or "generic",
+        tenant_name=str(data.get("tenant_name") or "").strip() or None,
+        slug=str(data.get("slug") or "").strip() or None,
+    )
+
+
+def _compiler_reply(
+    blueprint: TenantBlueprint,
+    *,
+    provider: str,
+    discarded: List[str],
+    write_decision: str,
+) -> str:
+    """Respuesta en modo PLAN: esqueleto del blueprint + pregunta de Gate 1."""
+    lines: List[str] = []
+    if discarded:
+        lines.append(
+            "Modo PLAN: descartados sin ejecutar los intents de escritura ["
+            + ", ".join(discarded)
+            + "]. Nada se ha escrito."
+        )
+        lines.append("")
+    lines.append(f"Idea recibida: {blueprint.idea_nl}")
+    lines.append("")
+    lines.append(f"Slug propuesto: {blueprint.slug} · dominio: {blueprint.domain}")
+    lines.append("")
+    lines.append("Entidades propuestas:")
+    lines.extend(f"  - {entity}" for entity in blueprint.entities)
+    lines.append("")
+    lines.append("Capabilities propuestas y efecto sugerido:")
+    lines.extend(
+        f"  - {cap} -> {blueprint.policy.get(cap, 'deny')}"
+        for cap in blueprint.capabilities
+    )
+    lines.append("")
+    lines.append("Fases propuestas:")
+    lines.extend(f"  - {phase}" for phase in blueprint.phases)
+    lines.append("")
+    lines.append("Zonas del repo que tocaria (solo lectura hasta Gate 1):")
+    lines.append(f"  - src/agentic_os/domains/{blueprint.slug}/")
+    lines.append(f"  - data/tenants/{blueprint.slug}/")
+    lines.append(f"  - data/policies/{blueprint.slug}.json")
+    lines.append(f"  - tests/tenants/test_{blueprint.slug.replace('-', '_')}.py")
+    lines.append("")
+    lines.append(
+        "Preguntas para cerrar el blueprint: 1) que entidades faltan, "
+        "2) que integraciones reales usara el cliente, "
+        "3) quien resuelve el Gate 1."
+    )
+    lines.append("")
+    lines.append(
+        f"Gate 1: PENDIENTE (repo.file.write -> {write_decision}). "
+        "Sin Gate 1 y rol director no se escribe nada."
+    )
+    lines.append(f"Proveedor: {provider}")
+    return "\n".join(lines)
+
+
+@app.post("/api/v1/tenants/{tenant}/chat", response_model=CompilerChatResponse)
+def compiler_chat(
+    tenant: str,
+    req: CompilerChatRequest,
+    scope: str = Depends(tenant_scope),
+) -> CompilerChatResponse:
+    """Chat del tenant compilador (Fase 2): modo PLAN, sin escribir nada.
+
+    Aislamiento: el tenant del path DEBE coincidir con el resuelto por cabecera
+    (X-Tenant-Id / JWT / X-Admin-Key). Sin coincidencia -> 403: nunca se
+    conversa con el compilador en nombre de otro tenant.
+    """
+    requested = _tenant_registry.get(tenant)
+    if requested is None:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    # `tenant_scope` resuelve el tenant de la cabecera y devuelve su id interno
+    # (o el slug): se aceptan ambos y se canoniza al slug, que es la clave
+    # estable del registry y del data_dir del compilador.
+    if scope not in (requested.id, requested.slug):
+        raise HTTPException(status_code=403, detail="No autorizado para este tenant")
+    if requested.slug != _COMPILER_SLUG:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat de tenant no disponible para este tenant",
+        )
+    tenant_key = requested.slug
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacio")
+
+    # 1. Policy: generar el blueprint debe estar PERMITIDO (fail-closed).
+    decision = _policy_engine.decide(
+        tenant_key,
+        _COMPILER_BLUEPRINT_CAPABILITY,
+        roles=list(_COMPILER_OPERATOR_ROLES),
+    )
+    if decision.effect != "allow":
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"policy deniega '{_COMPILER_BLUEPRINT_CAPABILITY}': "
+                f"{decision.reason}"
+            ),
+        )
+
+    # 2. Gate 1: el unico camino a escritura es `require_approval` resuelto.
+    write_decision = _policy_engine.decide(
+        tenant_key,
+        _COMPILER_WRITE_CAPABILITY,
+        roles=list(_COMPILER_OPERATOR_ROLES),
+    )
+
+    # 3. Blueprint: LLM real si existe; si no (o si su salida no valida), el
+    #    esqueleto offline determinista. El compilador nunca se queda mudo.
+    provider_name = "offline"
+    blueprint: Optional[TenantBlueprint] = None
+    llm = _compiler_llm()
+    if llm is not None:
+        try:
+            blueprint = _compiler_llm_blueprint(llm, message, tenant_key)
+            provider_name = type(llm).__name__
+        except Exception as exc:
+            blueprint = None
+            logger.warning("compilador: salida LLM no valida, uso offline: %s", exc)
+    if blueprint is None:
+        blueprint = _compiler_offline_blueprint(message, tenant_key)
+
+    # 4. Modo PLAN: los intents de escritura se descartan ANTES de la policy.
+    discarded = _compiler_discarded_intents(message)
+
+    # 5. Persistencia aislada en data/tenants/{tenant}/chat/.
+    conv_id = req.conversation_id
+    if conv_id:
+        conv = _compiler_load_conversation(tenant_key, conv_id)
+    else:
+        conv_id = f"chat_{uuid.uuid4().hex[:12]}"
+        now = now_utc().isoformat()
+        conv = {
+            "id": conv_id,
+            "tenant_id": tenant_key,
+            "mode": _COMPILER_MODE,
+            "title": message[:50] + ("..." if len(message) > 50 else ""),
+            "created_at": now,
+            "updated_at": now,
+            "messages": [],
+        }
+    reply = _compiler_reply(
+        blueprint,
+        provider=provider_name,
+        discarded=discarded,
+        write_decision=write_decision.effect,
+    )
+    conv["messages"].append({"role": "user", "content": message})
+    conv["messages"].append({"role": "assistant", "content": reply})
+    _compiler_save_conversation(tenant_key, conv)
+
+    # 6. Auditoria: la consulta al compilador queda trazada en su EventLog.
+    event = Event(
+        kind="CompilerChatAnswered",
+        entity_id=f"compiler://{blueprint.id}",
+        payload={
+            "conversation_id": conv_id,
+            "mode": _COMPILER_MODE,
+            "provider": provider_name,
+            "slug": blueprint.slug,
+            "write_decision": write_decision.effect,
+            "discarded_intents": discarded,
+        },
+        actor_id="compiler",
+        tenant_id=tenant_key,
+    )
+    _event_log.append(event)
+
+    return CompilerChatResponse(
+        reply=reply,
+        mode=_COMPILER_MODE,
+        tenant_id=tenant_key,
+        provider=provider_name,
+        blueprint=blueprint.model_dump(mode="json"),
+        gate=blueprint.gate,
+        write_decision=write_decision.effect,
+        discarded_intents=discarded,
+        conversation_id=conv_id,
+        event_id=getattr(event, "id", None),
+    )
+
+
+# ------------------------------------------------- COMPILER READ-ONLY TOOLS ----
+# FASE 3 de PLAN_CLINE_AGENTE_COMPILADOR.md: el compilador trabaja con
+# herramientas de LECTURA del repo (registradas en el ToolRegistry como
+# `repo_scan`/`repo_file_list`/`repo_file_read`/`repo_search`). La tabla declara
+# la capability REAL de cada una, que es lo que evalua la Policy; sin regla
+# explicita en la policy del tenant, la capability cae en deny (fail-closed).
+_COMPILER_READ_ONLY_TOOLS: Tuple[Tuple[str, str], ...] = (
+    ("repo_scan", "repo.file.list"),
+    ("repo_file_list", "repo.file.list"),
+    ("repo_file_read", "repo.file.read"),
+    ("repo_search", "repo.search"),
+)
+
+
+def _compiler_tenant_key(tenant: str, scope: str) -> str:
+    """Valida el acceso al compilador y devuelve su slug canonico.
+
+    Contrato unico (compartido por el chat y el catalogo de tools):
+
+    1. tenant del path inexistente -> 404;
+    2. tenant de la cabecera distinto del path -> 403 (nunca se actua en
+       nombre de otro tenant);
+    3. tenant valido pero distinto de `agentic-compiler` -> 404: el compilador
+       no es un chat generico de tenant.
+    """
+    requested = _tenant_registry.get(tenant)
+    if requested is None:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    if scope not in (requested.id, requested.slug):
+        raise HTTPException(status_code=403, detail="No autorizado para este tenant")
+    if requested.slug != _COMPILER_SLUG:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat de tenant no disponible para este tenant",
+        )
+    return requested.slug
+
+
+class CompilerToolOut(BaseModel):
+    """Tool de LECTURA del repo disponible para el compilador."""
+
+    name: str
+    capability: str
+    policy: str
+    read_only: bool = True
+
+
+class CompilerToolsOut(BaseModel):
+    """Catalogo de herramientas read-only resuelto contra la Policy del tenant."""
+
+    tenant_id: str
+    mode: str
+    write_capability: str
+    write_decision: str
+    tools: List[CompilerToolOut]
+
+
+@app.get(
+    "/api/v1/tenants/{tenant}/compiler/tools",
+    response_model=CompilerToolsOut,
+)
+def compiler_tools(
+    tenant: str,
+    scope: str = Depends(tenant_scope),
+) -> CompilerToolsOut:
+    """Catalogo de tools READ-ONLY del compilador (Fase 3), sin ejecutar nada.
+
+    Informativo y fail-closed: cada entrada trae el efecto que la Policy del
+    tenant resuelve HOY para esa capability (``allow``/``deny``/
+    ``require_approval``). El endpoint no lee el repo ni escribe nada: dice que
+    PODRIA ejecutarse, nunca ejecuta.
+
+    Aislamiento: mismo contrato que el chat del compilador — el tenant del path
+    debe coincidir con el resuelto por cabecera y ser ``agentic-compiler``.
+    """
+    tenant_key = _compiler_tenant_key(tenant, scope)
+    tools = [
+        CompilerToolOut(
+            name=name,
+            capability=capability,
+            policy=_policy_engine.decide(
+                tenant_key,
+                capability,
+                roles=list(_COMPILER_OPERATOR_ROLES),
+            ).effect,
+        )
+        for name, capability in _COMPILER_READ_ONLY_TOOLS
+    ]
+    write_decision = _policy_engine.decide(
+        tenant_key,
+        _COMPILER_WRITE_CAPABILITY,
+        roles=list(_COMPILER_OPERATOR_ROLES),
+    )
+    return CompilerToolsOut(
+        tenant_id=tenant_key,
+        mode=_COMPILER_MODE,
+        write_capability=_COMPILER_WRITE_CAPABILITY,
+        write_decision=write_decision.effect,
+        tools=tools,
+    )
