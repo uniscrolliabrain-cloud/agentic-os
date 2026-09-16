@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from .models import EpisodicEvent, ProceduralSkill, SemanticFact, WorkingItem
+from .inmemory import MemoryItem, MemoryStore  # legacy in-process API (compat tests)
 from ...kernel.types.ids import new_id
 from ...kernel.types.time import now_utc
 

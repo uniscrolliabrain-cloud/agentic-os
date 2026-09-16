@@ -21,8 +21,11 @@ class Belief(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str = Field(default_factory=new_id)
-    kind: BeliefKind = BeliefKind.FACT
-    key: str = Field(description="clave estable ej. cliente.email, empresa.nombre")
+    kind: str = Field(
+        default=BeliefKind.FACT.value,
+        description="clase de conocimiento (canonico o libre; el proposer/LLM puede proponer kinds propios del dominio)",
+    )
+    key: Optional[str] = Field(default=None, description="clave estable ej. cliente.email, empresa.nombre")
     content: Dict[str, Any]
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     source_observation_id: Optional[str] = None
@@ -32,15 +35,6 @@ class Belief(BaseModel):
     expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
-
-    @field_validator("key")
-    @classmethod
-    def _key_nonblank(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Belief.key es obligatoria")
-        if len(v) > 256:
-            raise ValueError("key demasiado larga")
-        return v.strip()
 
     def is_expired(self) -> bool:
         if self.expires_at is None:
