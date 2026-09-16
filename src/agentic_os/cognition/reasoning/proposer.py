@@ -18,7 +18,12 @@ class IntentProposalResponse(BaseModel):
 class Proposer:
     """Deterministic base proposer stub."""
 
-    def propose(self, beliefs: List[Belief], goal: str) -> List[Intent]:
+    def propose(
+        self,
+        beliefs: List[Belief],
+        goal: str,
+        domain_context: Optional[str] = None,
+    ) -> List[Intent]:
         return [Intent(goal=goal, kind="reply_to_user", rationale="deterministic stub")]
 
 
@@ -33,11 +38,16 @@ class LLMProposer(Proposer):
         self.provider = provider or MockLLMProvider(default_response='{"intents": []}')
         self.domain_context = domain_context
 
-    def propose(self, beliefs: List[Belief], goal: str) -> List[Intent]:
+    def propose(
+        self,
+        beliefs: List[Belief],
+        goal: str,
+        domain_context: Optional[str] = None,
+    ) -> List[Intent]:
         prompt = build_intent_proposal_prompt(
             goal=goal,
             beliefs=beliefs,
-            domain_context=self.domain_context,
+            domain_context=domain_context or self.domain_context,
         )
 
         proposal_response = self.provider.generate_structured(

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import threading
 import uuid
-from datetime import datetime
+from datetime import timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from ...cognition.beliefs.belief import Belief
 from ...cognition.planning.intent import Intent
 from ...cognition.skills.library import SKILLS
 from ...execution.executor import Executor
@@ -22,7 +24,7 @@ from ...infrastructure.config.settings import settings
 from ...infrastructure.persistence import get_eventlog_repo
 from ...infrastructure.tenancy import Tenant, TenantConfig, TenantConfigPublic, TenantContext, TenantRegistry
 from ...interfaces.llm.chat import FrontAssistant
-from ...interfaces.llm.provider import FallbackLLMProvider, GeminiProvider, GroqProvider, MockLLMProvider
+from ...interfaces.llm.provider import BaseLLMProvider, FallbackLLMProvider, GeminiProvider, GroqProvider, MockLLMProvider
 from ...kernel.policy.engine import PolicyEngine
 from ...kernel.types.time import now_utc
 from ...kernel.world.events import Event
@@ -111,6 +113,26 @@ def _verify_supabase_jwt(auth_header: Optional[str]) -> Tuple[Optional[dict], _J
 _DEFAULT_SCOPE = "system"
 
 
+def _secret_matches(provided: Optional[str], expected: Optional[str]) -> bool:
+    return provided is not None and expected is not None and hmac.compare_digest(provided, expected)
+
+
+def _credentials_expired(tenant: Tenant) -> bool:
+    expires_at = tenant.config.credentials_expires_at
+    if expires_at is None:
+        return False
+    now = now_utc()
+    if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    else:
+        expires_at = expires_at.astimezone(timezone.utc)
+    if now.tzinfo is None or now.utcoffset() is None:
+        now = now.replace(tzinfo=timezone.utc)
+    else:
+        now = now.astimezone(timezone.utc)
+    return now > expires_at
+
+
 def tenant_scope(
     x_tenant_id: Optional[str] = Header(default=None, alias=_TENANT_HEADER),
     x_api_key: Optional[str] = Header(default=None, alias=_API_KEY_HEADER),
@@ -136,6 +158,11 @@ def tenant_scope(
         if tenant_id:
             tenant = _tenant_registry.get(str(tenant_id))
             if tenant is not None:
+                if _credentials_expired(tenant):
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Credenciales del tenant expiradas: contacta al administrador",
+                    )
                 return tenant.id
             logger.warning(
                 "JWT tenant_id '%s' no registrado; usando scope por defecto",
@@ -144,36 +171,29 @@ def tenant_scope(
         return _DEFAULT_SCOPE
 
     if not x_tenant_id:
-        if settings.admin_api_key and x_admin_key == settings.admin_api_key:
-            return _DEFAULT_SCOPE
         return _DEFAULT_SCOPE
     tenant = _tenant_registry.get(x_tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
 
-    # 0. Credenciales del tenant expiradas → denegar (fail-closed).
-    #    Aplica a cualquier vía de acceso (api key o admin): un tenant con
-    #    credenciales vencidas no debe seguir operando.
-    _expires_at = tenant.config.credentials_expires_at
-    if _expires_at is not None:
-        _now = now_utc()
-        _expires_at_utc = _expires_at if _expires_at.tzinfo else _expires_at.replace(tzinfo=_now.tzinfo)
-        if _now > _expires_at_utc:
-            raise HTTPException(
-                status_code=401,
-                detail="Credenciales del tenant expiradas: contacta al administrador",
-            )
+    if _credentials_expired(tenant):
+        raise HTTPException(
+            status_code=401,
+            detail="Credenciales del tenant expiradas: contacta al administrador",
+        )
 
-    # 1. Admin bypass si coincide X-Admin-Key con settings.admin_api_key
-    if settings.admin_api_key and (x_admin_key == settings.admin_api_key or x_api_key == settings.admin_api_key):
+    if settings.admin_api_key and (
+        _secret_matches(x_admin_key, settings.admin_api_key)
+        or _secret_matches(x_api_key, settings.admin_api_key)
+    ):
         return tenant.id
 
     expected_key = tenant.config.credentials.get("api_key")
-    # 2. Si el tenant tiene API key configurada, DEBE coincidir
     if expected_key:
-        if x_api_key != expected_key:
+        if not _secret_matches(x_api_key, str(expected_key)):
             raise HTTPException(status_code=401, detail="API key inválida para el tenant")
         return tenant.id
+
 
     # 3. Si el tenant no tiene API key configurada, rechazar acceso
     if tenant.id != _DEFAULT_SCOPE:
@@ -196,24 +216,28 @@ def admin_scope(
     admin_key = settings.admin_api_key
     if not admin_key:
         raise HTTPException(status_code=401, detail="ADMIN_API_KEY no configurada en el servidor")
-    if x_admin_key == admin_key or x_api_key == admin_key:
+    if _secret_matches(x_admin_key, admin_key) or _secret_matches(x_api_key, admin_key):
         return True
     raise HTTPException(status_code=401, detail="Admin API key requerida o inválida")
 
 _event_log = get_eventlog_repo()
 
-def _build_llm():
+def _build_llm(
+    model_name: str,
+    fallback_model_name: str,
+    mock_response: str = "{}",
+) -> BaseLLMProvider:
     primary = None
     fallback = None
     if settings.gemini_api_key:
         try:
-            primary = GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+            primary = GeminiProvider(api_key=settings.gemini_api_key, model=model_name)
         except Exception:
             primary = None
     groq_key = getattr(settings, 'groq_api_key', None) or getattr(settings, 'GROQ_API_KEY', None)
     if groq_key:
         try:
-            fallback = GroqProvider(api_key=groq_key, model=getattr(settings, 'groq_model', 'llama-3.3-70b-versatile'))
+            fallback = GroqProvider(api_key=groq_key, model=fallback_model_name)
         except Exception:
             fallback = None
     if primary and fallback:
@@ -222,25 +246,44 @@ def _build_llm():
         return primary
     if fallback:
         return fallback
-    return MockLLMProvider(
-        default_response=(
-            '{"goal": "responder al usuario", "kind": "reply_to_user", '
-            '"entity_id": "n/a", "payload": "", "rationale": "mock sin API key", '
-            '"reply_to_user": "Hola! Soy el director (modo mock). Configura GEMINI_API_KEY o GROQ_API_KEY en .env para respuestas reales."}'
-        )
-    )
+    return MockLLMProvider(default_response=mock_response)
 
-_llm = _build_llm()
+
+_chat_mock_response = (
+    "Hola, soy el asistente de AGENTE OS (modo mock). "
+    "Configura GEMINI_API_KEY o GROQ_API_KEY para respuestas reales."
+)
+_orchestrator_mock_response = json.dumps({
+    "intents": [{
+        "goal": "responder al usuario",
+        "kind": "reply_to_user",
+        "entity_id": "n/a",
+        "payload": {},
+        "rationale": "mock sin API key",
+        "reply_to_user": _chat_mock_response,
+        "confidence": 1.0,
+        "requires_approval": False,
+        "risk_level": "low",
+        "source_belief_ids": [],
+    }]
+})
+_chat_llm = _build_llm(
+    settings.gemini_chat_model,
+    settings.groq_chat_model,
+    mock_response=_chat_mock_response,
+)
+_llm = _build_llm(
+    settings.gemini_model,
+    settings.groq_model,
+    mock_response=_orchestrator_mock_response,
+)
 _orchestrator = Orchestrator(log=_event_log, llm=_llm)
 _front_assistant = FrontAssistant(
     model_name=settings.gemini_chat_model,
-    api_key=settings.gemini_api_key,
+    api_key=None,
     temperature=settings.gemini_temperature,
+    provider=_chat_llm,
 )
-try:
-    _front_assistant.provider = _llm
-except Exception:
-    pass
 
 _tasks_lock = threading.Lock()
 _background_tasks: Dict[str, Any] = {}
@@ -399,28 +442,308 @@ def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
     """
     return ACTION_BY_KIND.get((kind or "").strip().lower())
 
+
+_ASSISTANT_AGENT_ID = "front_assistant"
+
+
+def _cognition_store(tenant_id: str) -> Any:
+    if _cognition_registry is None:
+        return None
+    return _cognition_registry.for_agent(tenant_id, _ASSISTANT_AGENT_ID)
+
+
+def _belief(
+    kind: str,
+    key: Optional[str],
+    content: Dict[str, Any],
+    confidence: Any,
+    source_id: Optional[str],
+    agent_id: str,
+) -> Belief:
+    try:
+        score = float(confidence)
+    except (TypeError, ValueError):
+        score = 0.5
+    return Belief(
+        kind=kind,
+        key=key,
+        content=content,
+        confidence=max(0.0, min(1.0, score)),
+        source_observation_id=source_id,
+        source_agent_id=agent_id,
+    )
+
+
+def _memory_beliefs(store: Any, query: str) -> List[Belief]:
+    if store is None:
+        return []
+    context = store.context(query=query, k=10)
+    beliefs: List[Belief] = []
+    for item in context.get("working", []):
+        beliefs.append(_belief(
+            "working",
+            f"working:{item.get('id')}",
+            {"content": item.get("content", ""), "metadata": item.get("metadata", {})},
+            item.get("metadata", {}).get("confidence", 0.8),
+            item.get("id"),
+            _ASSISTANT_AGENT_ID,
+        ))
+    for event in context.get("episodic_recent", []):
+        beliefs.append(_belief(
+            "episodic",
+            f"episodic:{event.get('id')}",
+            {"event_type": event.get("event_type", ""), "payload": event.get("payload", {})},
+            0.9,
+            event.get("id"),
+            _ASSISTANT_AGENT_ID,
+        ))
+    for fact in context.get("semantic", []):
+        beliefs.append(_belief(
+            "semantic",
+            fact.get("key"),
+            {"value": fact.get("value")},
+            fact.get("confidence", 1.0),
+            fact.get("source_belief_id") or fact.get("id"),
+            _ASSISTANT_AGENT_ID,
+        ))
+    for skill in context.get("procedural", []):
+        beliefs.append(_belief(
+            "procedural",
+            f"procedure:{skill.get('name')}",
+            {
+                "name": skill.get("name", ""),
+                "description": skill.get("description", ""),
+                "steps": skill.get("steps", []),
+                "version": skill.get("version", 1),
+            },
+            1.0,
+            skill.get("id"),
+            _ASSISTANT_AGENT_ID,
+        ))
+    return beliefs
+
+
+def _memory_domain_context(store: Any, query: str) -> Optional[str]:
+    if store is None:
+        return None
+    context = store.context(query=query, k=10)
+    return json.dumps({
+        "semantic": context.get("semantic", []),
+        "procedural": context.get("procedural", []),
+    }, ensure_ascii=False, default=str)
+
+
+def _remember_chat(
+    tenant_id: str,
+    message: str,
+    reply: str,
+    conversation_id: Optional[str],
+    correlation_id: str,
+) -> None:
+    store = _cognition_store(tenant_id)
+    if store is None:
+        return
+    try:
+        store.working_add(
+            f"User: {message}\nAssistant: {reply}",
+            metadata={"conversation_id": conversation_id, "source": "chat"},
+        )
+        store.episodic_append(
+            "chat_turn",
+            payload={
+                "user_message": message,
+                "assistant_reply": reply,
+                "conversation_id": conversation_id,
+            },
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:
+        logger.warning("no se pudo persistir memoria de chat: %s", exc)
+
+
+def _json_safe(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except Exception:
+        return str(value)
+
+
+def _remember_orchestration_result(
+    tenant_id: str,
+    intent_data: Dict[str, Any],
+    outcome: Dict[str, Any],
+    correlation_id: str,
+) -> None:
+    store = _cognition_store(tenant_id)
+    if store is None:
+        return
+    try:
+        store.episodic_append(
+            "intent_processed",
+            payload={
+                "intent": intent_data,
+                "action": outcome.get("action"),
+                "policy_effect": outcome.get("policy_effect"),
+                "note": outcome.get("note"),
+            },
+            correlation_id=correlation_id,
+        )
+        store.working_add(
+            f"Intent {intent_data.get('kind')}: {outcome.get('note') or 'processed'}",
+            metadata={
+                "action": outcome.get("action"),
+                "policy_effect": outcome.get("policy_effect"),
+                "correlation_id": correlation_id,
+            },
+        )
+    except Exception as exc:
+        logger.warning("no se pudo persistir resultado de orquestacion: %s", exc)
+
+
+def _execute_intent(
+    intent: Intent,
+    tenant_id: str,
+    correlation_id: str,
+    command_id: str,
+) -> Dict[str, Any]:
+    action = _map_kind_to_action(intent.kind)
+    if action is None:
+        return {
+            "action": None,
+            "policy_effect": "not_mapped",
+            "reason": f"sin tool para '{intent.kind}'",
+            "result": None,
+            "note": f"sin tool para '{intent.kind}'",
+        }
+
+    tenant = _tenant_registry.get(tenant_id)
+    if tenant is None:
+        return {
+            "action": action,
+            "policy_effect": "deny",
+            "reason": f"tenant {tenant_id} no registrado",
+            "result": None,
+            "note": f"tenant {tenant_id} no registrado",
+        }
+
+    try:
+        decision = _policy_engine.decide(
+            tenant_id=tenant.id,
+            capability=action,
+            resource_kind=intent.kind,
+            roles=["director"],
+        )
+    except Exception as exc:
+        return {
+            "action": action,
+            "policy_effect": "deny",
+            "reason": f"policy error: {exc}",
+            "result": None,
+            "note": f"policy error: {exc}",
+        }
+
+    if decision.effect != "allow":
+        kind = "ApprovalRequired" if decision.effect == "require_approval" else "ActionDenied"
+        _event_log.append(
+            Event(
+                kind=kind,
+                entity_id=intent.id,
+                payload={
+                    "action": action,
+                    "intent_id": intent.id,
+                    "reason": decision.reason,
+                },
+                actor_id="orchestrator",
+                tenant_id=tenant.id,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+        )
+        return {
+            "action": action,
+            "policy_effect": decision.effect,
+            "reason": decision.reason,
+            "result": None,
+            "note": f"{decision.effect}: {decision.reason}",
+        }
+
+    if intent.requires_approval or intent.risk_level != "low":
+        _event_log.append(
+            Event(
+                kind="ApprovalRequired",
+                entity_id=intent.id,
+                payload={
+                    "action": action,
+                    "intent_id": intent.id,
+                    "reason": "intent marca aprobación o riesgo no bajo",
+                    "risk_level": intent.risk_level,
+                },
+                actor_id="orchestrator",
+                tenant_id=tenant.id,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+        )
+        return {
+            "action": action,
+            "policy_effect": "require_approval",
+            "reason": "intent requiere aprobación o tiene riesgo no bajo",
+            "result": None,
+            "note": "requiere aprobación humana",
+        }
+
+    params = dict(intent.payload)
+    params.pop("tenant_id", None)
+    params["rationale"] = intent.rationale
+    result = _executor.execute(
+        action=action,
+        params=params,
+        context=TenantContext(tenant=tenant),
+        tenant_id=tenant.id,
+        roles=["director"],
+        correlation_id=correlation_id,
+        command_id=command_id,
+        actor_id="orchestrator",
+    )
+    if not result.get("success"):
+        note = f"rechazada/fallo '{action}': {result.get('error')}"
+    else:
+        note = f"ejecutada '{action}'"
+    return {
+        "action": action,
+        "policy_effect": decision.effect,
+        "reason": None,
+        "result": result,
+        "note": note,
+    }
+
+
 def _try_execute(action: Optional[str], intent: Intent, tenant_id: str) -> str:
     if action is None:
         return "sin herramienta concreta"
-    tenant = _tenant_registry.get(tenant_id)
-    if tenant is None:
-        return f"tenant {tenant_id} no registrado"
-    context = TenantContext(tenant=tenant)
-    try:
-        result = _executor.execute(
-            action=action,
-            params={"rationale": intent.goal, "payload": intent.payload},
-            context=context,
-            tenant_id=tenant.id,
-        )
-        if not result.get("success"):
-            return f"rechazada/fallo '{action}': {result.get('error')}"
-        return f"ejecutada '{action}'"
-    except Exception as e:
-        return f"fallo al ejecutar '{action}': {e}"
+    outcome = _execute_intent(
+        intent,
+        tenant_id,
+        correlation_id=f"corr-{uuid.uuid4().hex}",
+        command_id=f"cmd-{uuid.uuid4().hex}",
+    )
+    return str(outcome["note"])
 
-def _start_orchestration_task(message: str, conversation_id: Optional[str] = None, tenant_id: str = "system") -> str:
+def _start_orchestration_task(
+    message: str,
+    conversation_id: Optional[str] = None,
+    tenant_id: str = "system",
+    correlation_id: Optional[str] = None,
+    command_id: Optional[str] = None,
+    beliefs: Optional[List[Belief]] = None,
+    domain_context: Optional[str] = None,
+) -> str:
     task_id = f"task_{uuid.uuid4().hex[:8]}"
+    correlation_id = correlation_id or f"corr-{uuid.uuid4().hex}"
+    command_id = command_id or f"cmd-{uuid.uuid4().hex}"
+    store = _cognition_store(tenant_id)
+    beliefs = beliefs if beliefs is not None else _memory_beliefs(store, message)
+    domain_context = domain_context if domain_context is not None else _memory_domain_context(store, message)
     with _tasks_lock:
         _background_tasks[task_id] = {
             "id": task_id,
@@ -428,32 +751,91 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
             "status": "running",
             "message": message,
             "summary": "",
+            "correlation_id": correlation_id,
+            "command_id": command_id,
             "started_at": now_utc().isoformat(),
         }
+
     def _run() -> None:
         try:
-            intent = _orchestrator.handle_user_message(message, tenant_id=tenant_id)
-            note = ""
-            if intent.kind and intent.kind != "reply_to_user":
-                action = _map_kind_to_action(intent.kind)
-                note = _try_execute(action, intent, tenant_id) if action else f"sin tool para '{intent.kind}'"
+            intent = _orchestrator.handle_user_message(
+                message,
+                tenant_id=tenant_id,
+                beliefs=beliefs,
+                domain_context=domain_context,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+            intent_data = intent.model_dump(mode="json")
+            if intent.kind == "reply_to_user":
+                outcome = {
+                    "action": None,
+                    "policy_effect": "not_applicable",
+                    "reason": None,
+                    "result": None,
+                    "note": intent.reply_to_user or "respuesta conversacional; sin accion",
+                }
+            else:
+                outcome = _execute_intent(
+                    intent,
+                    tenant_id,
+                    correlation_id,
+                    command_id,
+                )
+            _remember_orchestration_result(
+                tenant_id,
+                intent_data,
+                outcome,
+                correlation_id,
+            )
+            routing = "deterministic" if intent.rationale == "deterministic router" else "llm"
             summary = f"Intent '{intent.kind}' procesado"
-            if note:
-                summary += f" · {note}"
+            if outcome.get("note"):
+                summary += f" · {outcome['note']}"
             _event_log.append(
                 Event(
                     kind="BackgroundProcessingDone",
                     entity_id=task_id,
-                    payload={"task_id": task_id, "intent_kind": intent.kind, "note": note},
+                    payload={
+                        "task_id": task_id,
+                        "intent": intent_data,
+                        "intent_kind": intent.kind,
+                        "reply_to_user": intent.reply_to_user,
+                        "routing": routing,
+                        "action": outcome.get("action"),
+                        "policy_effect": outcome.get("policy_effect"),
+                        "result": _json_safe(outcome.get("result")),
+                        "note": outcome.get("note"),
+                    },
                     actor_id="orchestrator",
                     tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    command_id=command_id,
                 )
             )
-            # Back-office NO inyecta en la conversación del usuario.
-            # Solo audita en EventLog (más arriba) para no romper la voz de Laia.
             with _tasks_lock:
-                _background_tasks[task_id].update(status="completed", summary=summary, ended_at=now_utc().isoformat())
+                _background_tasks[task_id].update(
+                    status="completed",
+                    summary=summary,
+                    intent=intent_data,
+                    reply_to_user=intent.reply_to_user,
+                    action=outcome.get("action"),
+                    policy_effect=outcome.get("policy_effect"),
+                    result=_json_safe(outcome.get("result")),
+                    note=outcome.get("note"),
+                    ended_at=now_utc().isoformat(),
+                )
         except Exception as e:
+            store = _cognition_store(tenant_id)
+            if store is not None:
+                try:
+                    store.episodic_append(
+                        "orchestration_failed",
+                        payload={"error": str(e)},
+                        correlation_id=correlation_id,
+                    )
+                except Exception:
+                    pass
             _event_log.append(
                 Event(
                     kind="BackgroundProcessingFailed",
@@ -461,12 +843,17 @@ def _start_orchestration_task(message: str, conversation_id: Optional[str] = Non
                     payload={"task_id": task_id, "error": str(e)},
                     actor_id="orchestrator",
                     tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    command_id=command_id,
                 )
             )
-            # Back-office NO inyecta en la conversación del usuario.
-            # Solo audita en EventLog (más arriba) para no romper la voz de Laia.
             with _tasks_lock:
-                _background_tasks[task_id].update(status="failed", summary=str(e), ended_at=now_utc().isoformat())
+                _background_tasks[task_id].update(
+                    status="failed",
+                    summary=str(e),
+                    ended_at=now_utc().isoformat(),
+                )
+
     threading.Thread(target=_run, daemon=True).start()
     return task_id
 
@@ -488,8 +875,17 @@ def chat(req: ChatRequest, scope: str = Depends(tenant_scope)) -> ChatResponse:
     # Knowledge base por tenant: compartida + carpeta del tenant (si existe)
     tenant_knowledge_dir = TENANTS_DATA_DIR / scope / "knowledge"
     kb_arg = tenant_knowledge_dir if scope != _DEFAULT_SCOPE else None
+    store = _cognition_store(scope)
     try:
-        reply = _front_assistant.answer(message, tenant_knowledge_dir=kb_arg)
+        memory_context = store.context(query=message, k=5) if store is not None else None
+    except Exception:
+        memory_context = None
+    try:
+        reply = _front_assistant.answer(
+            message,
+            tenant_knowledge_dir=kb_arg,
+            memory_context=memory_context,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"El asistente no pudo responder: {e}")
     if req.conversation_id:
@@ -497,7 +893,27 @@ def chat(req: ChatRequest, scope: str = Depends(tenant_scope)) -> ChatResponse:
             _append_message_to_conversation(req.conversation_id, "assistant", reply, scope)
         except HTTPException:
             pass
-    task_id = _start_orchestration_task(message, conversation_id=req.conversation_id, tenant_id=scope)
+    correlation_id = f"corr-{uuid.uuid4().hex}"
+    command_id = f"cmd-{uuid.uuid4().hex}"
+    store = _cognition_store(scope)
+    beliefs = _memory_beliefs(store, message)
+    domain_context = _memory_domain_context(store, message)
+    task_id = _start_orchestration_task(
+        message,
+        conversation_id=req.conversation_id,
+        tenant_id=scope,
+        correlation_id=correlation_id,
+        command_id=command_id,
+        beliefs=beliefs,
+        domain_context=domain_context,
+    )
+    _remember_chat(
+        tenant_id=scope,
+        message=message,
+        reply=reply,
+        conversation_id=req.conversation_id,
+        correlation_id=correlation_id,
+    )
     return ChatResponse(reply=reply, processing=True, task_id=task_id)
 
 def _iter_conversation_paths(scope: str):
@@ -602,16 +1018,12 @@ def _run_scheduled_pipeline(
                     params={"correlation_id": correlation_id, "command_id": command_id}
                 )
 
-            # Scheduler corre en thread, necesita nuevo loop
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Estamos en thread de APScheduler, no hay loop corriendo
-                    wf_id = asyncio.run(_start())
-                else:
-                    wf_id = loop.run_until_complete(_start())
-            except RuntimeError:
                 wf_id = asyncio.run(_start())
+            except RuntimeError:
+                wf_id = None
+            if wf_id is None:
+                raise RuntimeError("no se pudo ejecutar Temporal desde el scheduler")
 
             _event_log.append(
                 Event(
@@ -901,7 +1313,8 @@ def get_artifact(tenant_id: str, artifact_id: str, scope: str = Depends(tenant_s
 
 try:
     from ...cognition.memory import CognitionRegistry
-    _cognition_registry = CognitionRegistry()
+    _cognition_registry = CognitionRegistry(base_dir=DATA_DIR)
+    _cognition_registry._base_dir = DATA_DIR
 except Exception:
     _cognition_registry = None
 

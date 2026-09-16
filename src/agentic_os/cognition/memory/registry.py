@@ -6,11 +6,15 @@ from .store import CognitionStore
 class CognitionRegistry:
     _instance: "CognitionRegistry | None" = None
     def __new__(cls, base_dir: Path | str = Path("data")):
+        base_path = Path(base_dir)
         if cls._instance is None:
             inst = super().__new__(cls)
-            inst._base_dir = Path(base_dir)
+            inst._base_dir = base_path
             inst._cache: Dict[Tuple[str,str], CognitionStore] = {}
             cls._instance = inst
+        elif cls._instance._base_dir != base_path:
+            cls._instance._base_dir = base_path
+            cls._instance._cache.clear()
         return cls._instance
     def __init__(self, base_dir: Path | str = Path("data")):
         pass

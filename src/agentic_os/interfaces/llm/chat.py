@@ -7,8 +7,9 @@ conversa de forma natural apoyándose en la knowledge base local.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from .knowledge import KnowledgeBase
 from .provider import BaseLLMProvider, GeminiProvider, MockLLMProvider
@@ -82,13 +83,16 @@ class FrontAssistant:
         api_key: Optional[str] = None,
         temperature: Optional[float] = None,
         knowledge_dir=None,
+        provider: Optional[BaseLLMProvider] = None,
     ):
         self.kb = KnowledgeBase(directory=knowledge_dir)
         # KBs combinadas por tenant (compartida + carpeta del tenant), con caché
         self._tenant_kbs: Dict[str, KnowledgeBase] = {}
         self._shared_dirs = [d for d in self.kb.directories]
-        if api_key:
-            self.provider: BaseLLMProvider = GeminiProvider(
+        if provider is not None:
+            self.provider = provider
+        elif api_key:
+            self.provider = GeminiProvider(
                 api_key=api_key, model=model_name, temperature=temperature
             )
         else:
@@ -99,7 +103,12 @@ class FrontAssistant:
                 )
             )
 
-    def answer(self, user_message: str, tenant_knowledge_dir: Path | str | None = None) -> str:
+    def answer(
+        self,
+        user_message: str,
+        tenant_knowledge_dir: Path | str | None = None,
+        memory_context: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """Genera una respuesta rápida y natural usando la knowledge base.
 
         Si se indica `tenant_knowledge_dir`, la recuperación combina la base
@@ -122,4 +131,12 @@ class FrontAssistant:
             system = PERSONA_SYSTEM + "\n\nBASE DE CONOCIMIENTO (úsala si aplica):\n" + context
         else:
             system = PERSONA_SYSTEM
+        if memory_context:
+            memory = "\n\n".join(
+                f"[{kind}]\n{json.dumps(items, ensure_ascii=False, default=str)}"
+                for kind, items in memory_context.items()
+                if kind not in {"tenant_id", "agent_id"} and items
+            )
+            if memory:
+                system += "\n\nMEMORIA DEL ASISTENTE (úsala solo si es relevante):\n" + memory
         return self.provider.generate(prompt=user_message, system_instruction=system)

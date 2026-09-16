@@ -11,9 +11,11 @@ type Tenant = { id: string; slug: string; name: string; active?: boolean };
 type Conversation = { id: string; tenant_id: string; title: string; updated_at: string };
 type Artifact = { path: string; type: 'file' | 'dir'; size?: string };
 type EventItem = { id: string; ts: string; type: 'click' | 'type' | 'nav' | 'log'; message: string; meta?: string };
-type Task = { id: string; status: 'running' | 'completed' | 'failed'; label: string; ts: string };
+type Task = { id: string; status: 'running' | 'completed' | 'failed'; label: string; ts: string; intent?: { kind?: string }; reply_to_user?: string; action?: string; policy_effect?: string; note?: string; result?: unknown };
 type Tool = { id: string; name: string; published: boolean; type: 'connector' | 'skill' };
 type Message = { id: string; role: 'user' | 'agent'; text: string; time: string };
+
+const API_BASE = '/api/v1';
 
 // --- Seed Data (preview mode, no backend) ---
 const SEED_TENANTS: Tenant[] = [
@@ -100,25 +102,28 @@ export default function App() {
   const [inputVal, setInputVal] = useState('');
   const [planMode, setPlanMode] = useState<'Plan' | 'Act' | 'Research'>('Plan');
   const [executeAction, setExecuteAction] = useState('gmail.search');
+  const [executeQuery, setExecuteQuery] = useState('');
+  const [executeLimit, setExecuteLimit] = useState('10');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Cabeceras de autenticación para el backend
-  const liveHeaders = () => ({
+  const liveHeaders = (includeAdmin = false) => ({
     'X-Tenant-Id': tenantId,
     'X-Api-Key': apiKey,
-    'X-Admin-Key': adminKey,
+    ...(includeAdmin ? { 'X-Admin-Key': adminKey } : {}),
   } as Record<string, string>);
 
   // Carga datos reales (tools, skills, tenants, conversaciones, artifacts) desde el backend
   const refreshLiveData = async () => {
     try {
       const headers = liveHeaders();
+      const adminHeaders = liveHeaders(true);
       const [toolsRes, skillsRes, convsRes, artsRes, tensRes] = await Promise.all([
-        fetch('/api/tools', { headers }),
-        fetch('/api/skills', { headers }),
-        fetch('/api/conversations', { headers }),
-        fetch('/api/artifacts', { headers }),
-        fetch('/api/tenants', { headers }),
+        fetch(`${API_BASE}/tools`, { headers }),
+        fetch(`${API_BASE}/skills`, { headers }),
+        fetch(`${API_BASE}/conversations`, { headers }),
+        fetch(`${API_BASE}/artifacts`, { headers }),
+        fetch(`${API_BASE}/tenants`, { headers: adminHeaders }),
       ]);
       if (toolsRes.ok || skillsRes.ok) {
         const toolsRaw: any[] = toolsRes.ok ? await toolsRes.json() : [];
@@ -134,7 +139,7 @@ export default function App() {
       }
       if (artsRes.ok) {
         const artRaw: any[] = await artsRes.json();
-        setArtifacts(artRaw.map(a => ({ path: a.path || a.id || 'artifact', type: 'file' as const, size: undefined })));
+        setArtifacts(artRaw.map(a => ({ path: a.path || a.id || 'artifact', type: a.type === 'dir' ? 'dir' : 'file', size: a.size })));
       }
       if (tensRes.ok) {
         const tenRaw: any[] = await tensRes.json();
@@ -150,7 +155,7 @@ export default function App() {
   // Healthcheck real del backend (no bloqueante; si falla se queda en preview)
   useEffect(() => {
     let alive = true;
-    fetch('/api/events', { headers: liveHeaders() })
+    fetch(`${API_BASE}/events`, { headers: liveHeaders() })
       .then(r => {
         if (!alive) return;
         setBackendLive(r.ok);
@@ -173,8 +178,8 @@ export default function App() {
       try {
         const headers = liveHeaders();
         const [evRes, tRes] = await Promise.all([
-          fetch('/api/events', { headers }),
-          fetch('/api/tasks', { headers }),
+          fetch(`${API_BASE}/events`, { headers }),
+          fetch(`${API_BASE}/tasks`, { headers }),
         ]);
         if (evRes.ok) {
           const raw: any[] = await evRes.json();
@@ -191,7 +196,9 @@ export default function App() {
           setTasks(raw.slice(0, 20).map(t => ({
             id: t.id,
             status: t.status === 'running' || t.status === 'completed' || t.status === 'failed' ? t.status : 'failed',
-            label: t.summary || t.message || t.id,
+            label: t.intent?.kind
+              ? `Intent ${t.intent.kind}${t.action ? ` · ${t.action}` : ''}${t.note ? ` · ${t.note}` : ''}`
+              : t.summary || t.message || t.id,
             ts: (t.started_at || '').slice(11, 19),
           })));
         }
@@ -230,13 +237,13 @@ export default function App() {
     // Live: crea conversación (una sola vez) y envía el mensaje real a POST /api/chat
     try {
       if (!conversationId) {
-        const cRes = await fetch('/api/conversations', { method: 'POST', headers: liveHeaders() as any });
+        const cRes = await fetch(`${API_BASE}/conversations`, { method: 'POST', headers: liveHeaders() as any });
         if (cRes.ok) {
           const c = await cRes.json();
           setConversationId(c.id);
         }
       }
-      const res = await fetch('/api/chat', {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { ...liveHeaders(), 'Content-Type': 'application/json' } as any,
         body: JSON.stringify({ message: userMsg.text, conversation_id: conversationId || undefined }),
@@ -596,8 +603,8 @@ export default function App() {
                     <div className="border border-black p-3 bg-[#F5F5F3]">
                       <div className="font-bold mb-2">POST /api/execute — preview (no persistence)</div>
                       <div className="grid grid-cols-2 gap-2">
-                        <input placeholder="param: query" className="border border-black px-2 py-1 bg-white" />
-                        <input placeholder="param: limit=10" className="border border-black px-2 py-1 bg-white" />
+                        <input value={executeQuery} onChange={e=>setExecuteQuery(e.target.value)} placeholder="param: query" className="border border-black px-2 py-1 bg-white" />
+                        <input value={executeLimit} onChange={e=>setExecuteLimit(e.target.value)} placeholder="param: limit=10" className="border border-black px-2 py-1 bg-white" />
                       </div>
                       <button onClick={async ()=>{
                         if (!backendLive) {
@@ -608,7 +615,7 @@ export default function App() {
                           return;
                         }
                         try {
-                          const res = await fetch('/api/execute', {
+                          const res = await fetch(`${API_BASE}/execute`, {
                             method: 'POST',
                             headers: { ...liveHeaders(), 'Content-Type': 'application/json' } as any,
                             body: JSON.stringify({ action: executeAction, params: {} }),
