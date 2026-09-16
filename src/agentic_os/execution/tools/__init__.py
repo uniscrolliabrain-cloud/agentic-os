@@ -12,6 +12,12 @@ from .scraper_tool import WebScrapeTool, WebSearchTool
 from .documentation_tool import DocumentationCreateTool, DocumentationSearchTool
 from .drive_tool import DriveListFilesTool, DriveReadFileTool, DriveSearchTool
 from .meta_tool import MetaPostPublishTool, MetaCarouselPublishTool
+from .repo_tool import (
+    RepoFileListTool,
+    RepoFileReadTool,
+    RepoScanTool,
+    RepoSearchTool,
+)
 from .scheduler_tool import (
     SchedulerCreateJobTool,
     SchedulerListJobsTool,
@@ -41,6 +47,10 @@ __all__ = [
     "DriveSearchTool",
     "MetaPostPublishTool",
     "MetaCarouselPublishTool",
+    "RepoFileListTool",
+    "RepoFileReadTool",
+    "RepoScanTool",
+    "RepoSearchTool",
     "SchedulerCreateJobTool",
     "SchedulerListJobsTool",
     "SchedulerDeleteJobTool",
@@ -66,6 +76,11 @@ ALL_TOOLS = [
     DriveSearchTool(),
     MetaPostPublishTool(),
     MetaCarouselPublishTool(),
+    # FASE 3 del agente compilador: tools READ-ONLY del repo (policy-gated).
+    RepoScanTool(),
+    RepoFileListTool(),
+    RepoFileReadTool(),
+    RepoSearchTool(),
 ]
 
 

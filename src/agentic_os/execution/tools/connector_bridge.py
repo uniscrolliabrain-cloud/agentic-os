@@ -43,6 +43,16 @@ CANONICAL_ALIASES: Dict[str, str] = {
     "drive_read_file": "file.read",
     "drive_search": "file.read",
     "drive_create_file": "file.create",
+    # FASE 3 del agente compilador: tools READ-ONLY del repo. La capability
+    # canónica no vive en el Connector Kernel (no hay provider de repositorio),
+    # así que `build_default_registry` conserva la tool determinista real de
+    # `execution/tools/repo_tool.py` (no la sustituye por un ConnectorBridgeTool).
+    # El alias NO autoriza nada: la autorización es de la Policy del tenant
+    # (`repo.file.read`/`repo.file.list`/`repo.search` -> allow).
+    "repo_scan": "repo.file.list",
+    "repo_file_list": "repo.file.list",
+    "repo_file_read": "repo.file.read",
+    "repo_search": "repo.search",
 }
 
 
