@@ -1,0 +1,36 @@
+RESTAURACION DESDE REPO DUMP
+
+Archivos incluidos y rutas exactas:
+src/agentic_os/kernel/__init__.py
+src/agentic_os/kernel/ontology/__init__.py
+src/agentic_os/kernel/ontology/capabilities.py
+src/agentic_os/kernel/ontology/domain_models.py
+src/agentic_os/kernel/ontology/entities.py
+src/agentic_os/kernel/ontology/invariants.py
+src/agentic_os/kernel/ontology/metamodel.py
+src/agentic_os/kernel/ontology/relations.py
+src/agentic_os/kernel/ontology/validator.py
+src/agentic_os/kernel/ontology/vocabulary.py
+src/agentic_os/kernel/policy/__init__.py
+src/agentic_os/kernel/policy/approval.py
+src/agentic_os/kernel/policy/engine.py
+src/agentic_os/kernel/policy/evaluator.py
+src/agentic_os/kernel/policy/invariants.py
+src/agentic_os/kernel/policy/models.py
+src/agentic_os/kernel/types/__init__.py
+src/agentic_os/kernel/types/ids.py
+src/agentic_os/kernel/types/time.py
+src/agentic_os/kernel/world/__init__.py
+src/agentic_os/kernel/world/applier.py
+src/agentic_os/kernel/world/events.py
+src/agentic_os/kernel/world/invariants.py
+src/agentic_os/kernel/world/projections.py
+src/agentic_os/kernel/world/replay.py
+src/agentic_os/kernel/world/state.py
+src/agentic_os/orchestration/pipelines/runner.py
+src/agentic_os/execution/executor.py
+src/agentic_os/domains/agencia/__init__.py
+
+NO incluido: src/agentic_os/interfaces/api/rest.py y .gitignore porque no aparecen como bloques de archivo en el dump. No se inventan.
+
+IMPORTANTE: data/tenants/registry.json tampoco se incluye para no redistribuir credenciales/estado runtime del dump. Debe restaurarse conservando tus credenciales reales y anadiendo el tenant requerido segun la spec.

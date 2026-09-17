@@ -1,0 +1,5 @@
+"""kernel: invariantes, pequeño, versionado"""
+
+
+
+================================================

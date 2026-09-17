@@ -105,5 +105,40 @@
       "credentials_expires_at": null
     },
     "created_at": "2026-09-16T16:04:15.012758Z"
+  },
+  {
+    "id": "69907ba7-3fe6-4069-93cf-f0f805fbd59c",
+    "slug": "tenant-a",
+    "config": {
+      "name": "Tenant A Actualizado",
+      "domain": "generic",
+      "logo": null,
+      "primary_color": "#facc15",
+      "data_dir": "C:\\Users\\Alfonso\\AppData\\Local\\Temp\\pytest-of-Alfonso\\pytest-123\\test_api_tenants_mutations_req0\\tenants\\tenant-a",
+      "enabled_capabilities": [
+        "gmail_send",
+        "calendar_create_event"
+      ],
+      "credentials": {
+        "api_key": "key-tenant-a"
+      },
+      "credentials_expires_at": null
+    },
+    "created_at": "2026-09-16T18:13:18.176040Z"
+  },
+  {
+    "id": "21a0bf6e-8953-48ae-aa24-ab0c97580545",
+    "slug": "tenant-b-nokey",
+    "config": {
+      "name": "Tenant B Sin Key",
+      "domain": "generic",
+      "logo": null,
+      "primary_color": "#facc15",
+      "data_dir": "C:\\Users\\Alfonso\\AppData\\Local\\Temp\\pytest-of-Alfonso\\pytest-123\\test_api_tenants_mutations_req0\\tenants\\tenant-b-nokey",
+      "enabled_capabilities": [],
+      "credentials": {},
+      "credentials_expires_at": null
+    },
+    "created_at": "2026-09-16T18:13:18.176040Z"
   }
 ]
