@@ -43,14 +43,18 @@ _APPROVAL_SUFFIXES = (".delete", ".remove", ".clear", ".publish", ".send", ".cre
 class ActionSpec(BaseModel):
     """Declaracion estable de una capability del sistema.
 
-    Esta es la unidad que el `LLMProposer` recibe. Ni el LLM ni el executor
-    ven el provider por debajo; solo este spec.
+    Esta es la unidad que el `LLMProposer` recibe. El LLM no ve el provider
+    por debajo; el `providers` es metadata para el router (que decide a
+    quien pedir la capability segun tenant y credenciales).
+
+    Varios providers pueden soportar el mismo kind (p.ej. `web.search` lo
+    declaran tavily, serpapi, exa, brave_search). Todos van en `providers`.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str
-    provider: str
+    providers: tuple[str, ...]
     params_schema: Type[BaseModel]
     risk: str
     requires_approval: bool = False
@@ -83,12 +87,16 @@ def _approval_for(kind: str, declared: Optional[bool]) -> bool:
     return kind.endswith(_APPROVAL_SUFFIXES)
 
 
-def derive_action_spec(provider: str, kind: str, meta: Dict[str, Any]) -> ActionSpec:
-    """Construye un ActionSpec a partir del provider + kind + meta."""
+def derive_action_spec(
+    providers: tuple[str, ...],
+    kind: str,
+    meta: Dict[str, Any],
+) -> ActionSpec:
+    """Construye un ActionSpec a partir de la lista de providers + kind + meta."""
     schema_cls = meta.get("schema") or archetype_for_kind(kind)
     if not (isinstance(schema_cls, type) and issubclass(schema_cls, BaseModel)):
         raise TypeError(
-            f"capability '{kind}' de '{provider}' declara schema no-Pydantic: "
+            f"capability '{kind}' de {providers} declara schema no-Pydantic: "
             f"{schema_cls!r}"
         )
     risk = _risk_for(kind, meta.get("risk"))
@@ -96,7 +104,7 @@ def derive_action_spec(provider: str, kind: str, meta: Dict[str, Any]) -> Action
     description = meta.get("description") or _default_description(kind)
     return ActionSpec(
         kind=kind,
-        provider=provider,
+        providers=providers,
         params_schema=schema_cls,
         risk=risk,
         requires_approval=requires_approval,
@@ -132,12 +140,25 @@ def derive_catalog(
         from ..providers import PROVIDER_SPECS as _SPECS
         specs = _SPECS
 
-    catalog: Dict[str, ActionSpec] = {}
+    # Primera pasada: agrupar providers por kind.
+    by_kind: Dict[str, Dict[str, Any]] = {}
     for prov, spec in specs.items():
         if provider is not None and prov != provider:
             continue
         for kind, meta in _declared_capabilities(spec):
-            catalog[kind] = derive_action_spec(prov, kind, meta)
+            entry = by_kind.setdefault(kind, {"providers": [], "meta": {}})
+            if prov not in entry["providers"]:
+                entry["providers"].append(prov)
+            # El primer meta no vacio gana (los declarados explicitos
+            # pesan mas que los legacy caps:[]).
+            if meta and not entry["meta"]:
+                entry["meta"] = meta
+
+    # Segunda pasada: construir ActionSpec por kind.
+    catalog: Dict[str, ActionSpec] = {}
+    for kind, entry in by_kind.items():
+        providers = tuple(sorted(entry["providers"]))
+        catalog[kind] = derive_action_spec(providers, kind, entry["meta"])
     return catalog
 
 
