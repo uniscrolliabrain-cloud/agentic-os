@@ -1,4 +1,4 @@
-﻿"""Entidades de dominio tipadas — kernel SOLO provee la MAQUINARIA.
+"""Entidades de dominio tipadas — kernel SOLO provee la MAQUINARIA.
 
 El kernel define:
 - ``BaseDomainModel`` — base estricta (frozen, forbid, tenant_id obligatorio).
@@ -27,7 +27,14 @@ from ..types.time import now_utc
 
 
 class BaseDomainModel(BaseModel):
-    """Base estricta para entidades de dominio."""
+    """Base estricta para entidades de dominio.
+
+    - ``frozen=True`` — inmutable.
+    - ``extra='forbid'`` — rechaza campos inesperados.
+    - ``validate_assignment=True`` — valida cada asignación.
+    - ``use_enum_values=True`` — guarda valores, no wrappers.
+    - ``tenant_id`` obligatorio — sin entidades huérfanas.
+    """
 
     model_config = ConfigDict(
         frozen=True,
@@ -90,9 +97,13 @@ class BaseDomainModel(BaseModel):
 DomainEntity = BaseDomainModel
 
 
+# EntityRef vive en ``entities.py`` (fuente única). Re-export por compatibilidad.
 from .entities import EntityRef  # noqa: E402
 
 
+# ---------------------------------------------------------------------------
+# Registro — ARRANCA VACÍO
+# ---------------------------------------------------------------------------
 ENTITY_TYPE_REGISTRY: dict[str, type[BaseDomainModel]] = {}
 
 
@@ -104,7 +115,12 @@ def register_entity_types(
     *classes: type[BaseDomainModel],
     registry: dict[str, type[BaseDomainModel]] | None = None,
 ) -> None:
-    """Registra clases de entidad de dominio EXPLÍCITAMENTE (bootstrap)."""
+    """Registra clases de entidad de dominio EXPLÍCITAMENTE (bootstrap).
+
+    - Rechaza clases sin ``kind`` Literal con default.
+    - Rechaza sobrescribir un kind ya registrado por OTRA clase.
+    - Idempotente si la clase ya estaba registrada.
+    """
     target = ENTITY_TYPE_REGISTRY if registry is None else registry
     for cls in classes:
         kind_field = cls.model_fields.get("kind")
