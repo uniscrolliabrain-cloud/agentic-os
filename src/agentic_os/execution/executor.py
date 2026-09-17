@@ -193,6 +193,7 @@ class Executor:
         correlation_id: Optional[str] = None,
         command_id: Optional[str] = None,
         actor_id: Optional[str] = None,
+        capability: Optional[str] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
 
@@ -227,9 +228,15 @@ class Executor:
                 return cached
 
         # ------------------------------------------------ POLICY
+        # `capability` es lo que ve la policy; `action` es la tool a
+        # ejecutar. Por defecto coinciden (backward compat). El
+        # orquestador puede pasar un kind canonico como capability
+        # (email.message.read) manteniendo el action como nombre de
+        # tool (gmail_read).
+        policy_capability = capability or action
 
         decision = self._decision(
-            action=action,
+            action=policy_capability,
             tenant_id=tid,
             roles=roles,
             context=context,
