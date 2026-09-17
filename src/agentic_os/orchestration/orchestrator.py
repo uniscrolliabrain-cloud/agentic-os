@@ -16,11 +16,19 @@ from ..cognition.roles.library import LIBRARY
 class DeterministicIntentRouter:
     _ROUTES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
         (("hello", "hi", "hey", "buenos dias", "buenas tardes", "buenas noches", "gracias"), "reply_to_user"),
-        (("send email", "send an email", "send correo", "enviar email", "enviar un email", "enviar correo", "enviar un correo", "envia email", "envia un email", "envia correo", "envia un correo", "manda email", "manda un email", "manda correo", "manda un correo"), "send_email"),
-        (("send slack", "send a slack", "enviar slack", "envia slack", "manda slack"), "send_slack"),
-        (("send whatsapp", "send a whatsapp", "enviar whatsapp", "envia whatsapp", "manda whatsapp"), "send_whatsapp"),
-        (("create event", "create an event", "create appointment", "schedule meeting", "agenda una reunion", "crear evento", "crear un evento", "crear cita", "crear una cita", "agendar reunion", "agendar una reunion", "programar reunion", "programar una reunion"), "create_event"),
-        (("scrape web", "scrape website", "web scrape", "extraer pagina", "extraer una pagina", "scrapear web", "scrapear pagina", "scrapear una pagina"), "web_scrape"),
+        # ESCRIBIR / ENVIAR
+        (("send email", "enviar email", "envia email", "envia un email", "enviar un email", "manda email", "manda un email", "enviar correo", "envia correo", "envia un correo", "manda correo", "manda un correo"), "send_email"),
+        (("send slack", "enviar slack", "envia slack", "manda slack"), "send_slack"),
+        (("send whatsapp", "enviar whatsapp", "envia whatsapp", "manda whatsapp"), "send_whatsapp"),
+        # CALENDARIO
+        (("create event", "crear evento", "crear un evento", "crear cita", "crear una cita", "agendar reunion", "agenda una reunion", "agendar una reunion", "programar reunion", "schedule meeting"), "create_event"),
+        (("ver calendario", "mi calendario", "proximos eventos", "lista de eventos", "listar eventos", "mis eventos", "que eventos"), "list_events"),
+        # LEER / LISTAR
+        (("leer correos", "lee correos", "lee los correos", "lee los ultimos", "ver correos", "mis correos", "mi bandeja", "leer bandeja", "lee la bandeja", "correos sin leer", "ultimos correos", "buzon", "inbox"), "read_email"),
+        (("listar drive", "lista drive", "mis ficheros", "mis archivos", "mi drive", "ver drive", "ver mis ficheros", "ver mis archivos", "listar ficheros", "listar archivos"), "list_drive"),
+        # WEB
+        (("scrape web", "scrapear", "extraer pagina", "extraer una pagina"), "scrape_web"),
+        (("buscar en la web", "busca en la web", "buscar web", "googlea", "search web"), "search_web"),
     )
     _ACCENTS = str.maketrans({"a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "n": "n"})
 
