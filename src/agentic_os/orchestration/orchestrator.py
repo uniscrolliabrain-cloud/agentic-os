@@ -53,6 +53,43 @@ class DeterministicIntentRouter:
         return None
 
 
+def _pipelines_block_for_tenant(tenant_id: str) -> str:
+    """Bloque con los pipelines declarados del tenant para el prompt del LLM.
+
+    El LLM no ve el codigo del tenant; le damos la lista de pipeline_ids
+    disponibles para que pueda proponer kind='run_pipeline' con el
+    pipeline_id correcto. Fail-safe: si algo falla, devuelve "".
+    """
+    try:
+        # NOTA: 2 puntos, no 3. Modulo en agentic_os.orchestration,
+        # package = agentic_os.orchestration, ".." = agentic_os.
+        from ..infrastructure.tenancy import TenantRegistry
+        t = TenantRegistry().get(tenant_id)
+        if t is None:
+            return ""
+        from .pipelines.runner import get_tenant_pipelines
+        pls = get_tenant_pipelines(t.slug)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "no se pudo construir el bloque de pipelines para %r: %s",
+            tenant_id, exc, exc_info=True,
+        )
+        return ""
+    if not pls:
+        return ""
+    lines = [
+        f"Pipelines del tenant '{t.slug}' "
+        f"(para lanzarlos usa kind='run_pipeline' con pipeline_id):"
+    ]
+    for pid, p in sorted(pls.items()):
+        enabled = getattr(p, "enabled", True)
+        flag = "" if enabled else " [DESHABILITADO]"
+        purpose = getattr(p, "purpose", "") or getattr(p, "name", pid)
+        lines.append(f"  - {pid}: {purpose}{flag}")
+    return "\n".join(lines)
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -93,9 +130,13 @@ class Orchestrator:
                 f"Role: {role.name}; permissions: {role.permissions}; "
                 f"forbidden tools: {role.forbidden_tools or 'none'}."
             )
-            proposer_context = (
-                f"{domain_context}\n{role_context}" if domain_context else role_context
-            )
+            # Inyectamos los pipelines declarados del tenant para que el LLM
+            # pueda proponer kind='run_pipeline' con pipeline_id concreto.
+            pipelines_block = _pipelines_block_for_tenant(tenant_id)
+            parts = [
+                p for p in (domain_context, pipelines_block, role_context) if p
+            ]
+            proposer_context = "\n".join(parts)
             try:
                 proposals = self.proposer.propose(
                     beliefs=beliefs or [],

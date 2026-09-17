@@ -60,3 +60,28 @@ def test_llm_proposer_receives_memory_context() -> None:
     assert proposer.calls[0][0] == [belief]
     assert proposer.calls[0][1] == "Prepara un resumen"
     assert "tenant context" in (proposer.calls[0][2] or "")
+
+def test_pipelines_block_inyectado_en_proposer_context() -> None:
+    """El proposer debe recibir la lista de pipelines del tenant para
+    poder proponer run_pipeline con pipeline_id concreto."""
+    proposer = SpyProposer()
+    orchestrator = Orchestrator(
+        log=EventLog(),
+        llm=MockLLMProvider(),
+        proposer=proposer,
+        router=DeterministicIntentRouter(),
+    )
+
+    # Mensaje que NO matchea el router (no dispara send_email, etc.)
+    orchestrator.handle_user_message(
+        "que pipelines tengo disponibles",
+        tenant_id="bor-agencia",
+    )
+
+    assert len(proposer.calls) == 1
+    ctx = proposer.calls[0][2] or ""
+    assert "bor-agencia" in ctx
+    assert "run_pipeline" in ctx
+    assert "inbox_watcher" in ctx
+    assert "leads_to_draft" in ctx
+    assert "daily_social" in ctx
