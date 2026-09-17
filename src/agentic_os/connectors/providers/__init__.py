@@ -11,6 +11,16 @@ import os
 from typing import Any, Dict, List, Optional
 
 from ..core.config import ConnectorConfig
+from ..core.schemas import (
+    CalendarEventParams,
+    CalendarListParams,
+    FileReadParams,
+    FileWriteParams,
+    GenericParams,
+    ListParams,
+    SearchParams,
+    SendParams,
+)
 from ..factory import ConnectorFactory
 from .stub import StubConnector
 
@@ -22,12 +32,17 @@ PROVIDER_SPECS: Dict[str, Dict[str, Any]] = {
         "connector_id": "google",
         "provider": "Google",
         "auth_type": "oauth2",
-        "caps": [
-            "email.message.read", "email.message.send",
-            "file.read", "file.create",
-            "calendar.event.create", "calendar.event.read",
-            "video.upload", "analytics.metrics.get", "analytics.search.query",
-        ],
+        "capabilities": {
+            "email.message.read":       {"schema": ListParams,         "risk": "READ_ONLY"},
+            "email.message.send":       {"schema": SendParams,         "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "file.read":                {"schema": FileReadParams,     "risk": "READ_ONLY"},
+            "file.create":              {"schema": FileWriteParams,    "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "calendar.event.create":    {"schema": CalendarEventParams,"risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "calendar.event.read":      {"schema": CalendarListParams, "risk": "READ_ONLY"},
+            "video.upload":             {"schema": GenericParams,      "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "analytics.metrics.get":    {"schema": GenericParams,      "risk": "READ_ONLY"},
+            "analytics.search.query":   {"schema": SearchParams,       "risk": "READ_ONLY"},
+        },
         "oauth": {
             "client_id_env": "GOOGLE_CLIENT_ID",
             "client_secret_env": "GOOGLE_CLIENT_SECRET",
