@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _StrictParams(BaseModel):
@@ -121,10 +121,11 @@ class FileDeleteParams(_StrictParams):
     path: str = Field(default="")
     file_id: str = Field(default="")
 
-    @field_validator("path", "file_id")
-    @classmethod
-    def _al_menos_uno(cls, v: str, info) -> str:
-        return v
+    @model_validator(mode="after")
+    def _al_menos_uno(self) -> "FileDeleteParams":
+        if not (self.path or self.file_id):
+            raise ValueError("FileDeleteParams requiere al menos path o file_id")
+        return self
 
 
 class CalendarEventParams(_StrictParams):

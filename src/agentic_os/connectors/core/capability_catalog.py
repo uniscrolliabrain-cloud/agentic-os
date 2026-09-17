@@ -37,7 +37,11 @@ from .schemas import GenericParams, archetype_for_kind
 # Sufijos que el loader marca como requires_approval por defecto.
 # Sirve como metadata para el LLM (que sepa cuando va a necesitar humano).
 # El endurecimiento REAL sigue en PolicyEvaluator.
-_APPROVAL_SUFFIXES = (".delete", ".remove", ".clear", ".publish", ".send", ".create")
+# .create NO va aqui: crear un recurso no es comunicacion externa ni
+# destructivo. El handoff lo dice explicito: solo send/delete/publish
+# requieren aprobacion humana por convencion. Los creates que de verdad
+# requieran aprobacion los declara el spec con requires_approval=True.
+_APPROVAL_SUFFIXES = (".delete", ".remove", ".clear", ".publish", ".send")
 
 
 class ActionSpec(BaseModel):
