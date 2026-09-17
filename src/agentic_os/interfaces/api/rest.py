@@ -17,6 +17,11 @@ from pydantic import BaseModel
 
 from ...cognition.beliefs.belief import Belief
 from ...cognition.planning.intent import Intent
+from ...cognition.planning.action_catalog import (
+    ACTION_CATALOG,
+    get_spec,
+    validate_params,
+)
 from ...cognition.skills.library import SKILLS
 from ...domains.compiler.entities import TenantBlueprint, TenantIdea, idea_keywords
 from ...execution.executor import Executor
@@ -440,6 +445,13 @@ ACTION_BY_KIND: Dict[str, str] = {
     "repo_search": "repo_search",
 }
 
+# FASE A: la fuente de verdad de los kinds canonicos es ACTION_CATALOG.
+# Se vuelcan aqui como alias para no romper ACTION_BY_KIND legacy.
+for _spec in ACTION_CATALOG.values():
+    ACTION_BY_KIND.setdefault(_spec.kind, _spec.action)
+del _spec
+
+
 def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
     """Resuelve el kind canónico de un Intent a su action del Executor.
 
@@ -703,7 +715,40 @@ def _execute_intent(
             "note": "requiere aprobación humana",
         }
 
-    params = dict(intent.payload)
+    # Fase A: si el kind esta en el catalogo, valida el payload contra su
+    # schema antes de ejecutar (fail-closed). Kinds legacy sin entrada en
+    # el catalogo pasan con payload libre como antes (compat).
+    spec = get_spec(intent.kind)
+    if spec is not None:
+        validated = validate_params(intent.kind, intent.payload)
+        if validated is None:
+            _event_log.append(
+                Event(
+                    kind="ActionDenied",
+                    entity_id=intent.id,
+                    payload={
+                        "action": action,
+                        "intent_id": intent.id,
+                        "reason": "payload no valida contra schema del kind",
+                        "kind": intent.kind,
+                    },
+                    actor_id="orchestrator",
+                    tenant_id=tenant.id,
+                    correlation_id=correlation_id,
+                    command_id=command_id,
+                )
+            )
+            return {
+                "action": action,
+                "policy_effect": "invalid_params",
+                "reason": f"payload no valida contra {intent.kind}",
+                "result": None,
+                "note": f"payload invalido para kind '{intent.kind}'",
+            }
+        params = validated.model_dump()
+    else:
+        params = dict(intent.payload)
+
     params.pop("tenant_id", None)
     params["rationale"] = intent.rationale
     result = _executor.execute(
