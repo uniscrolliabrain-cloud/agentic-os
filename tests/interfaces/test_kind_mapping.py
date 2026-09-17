@@ -40,7 +40,12 @@ def test_todas_las_actions_del_mapping_existen_en_executor() -> None:
     from agentic_os.execution.tools import build_default_registry
 
     registry = build_default_registry()
+    # reply_to_user es una accion INTERNA (respuesta conversacional),
+    # no una tool del Executor. Se excluye del chequeo.
+    INTERNAL_ACTIONS = {"reply_to_user"}
     for action in ACTION_BY_KIND.values():
+        if action in INTERNAL_ACTIONS:
+            continue
         assert action in registry.tools, (
             f"ACTION_BY_KIND apunta a '{action}' que no existe en ToolRegistry"
         )

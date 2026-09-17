@@ -66,7 +66,10 @@ def test_capabilities_cubren_familias_del_sop(registry):
 def test_spec_coherente_por_provider():
     for provider, spec in PROVIDER_SPECS.items():
         assert spec["connector_id"] == provider
-        assert len(spec["caps"]) > 0
+        # Acepta tanto "caps" (legacy, lista de strings) como
+        # "capabilities" (nuevo, dict kind -> {schema, risk}).
+        caps = spec.get("capabilities") or spec.get("caps") or {}
+        assert len(caps) > 0, f"{provider} no declara capabilities"
 
 
 def test_registry_resuelve_multi_provider(registry):

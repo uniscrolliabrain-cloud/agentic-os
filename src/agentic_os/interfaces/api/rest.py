@@ -17,6 +17,9 @@ from pydantic import BaseModel
 
 from ...cognition.beliefs.belief import Belief
 from ...cognition.planning.intent import Intent
+from ...connectors.core.capability_catalog import (
+    get_action_spec as _get_canonical_spec,
+)
 from ...cognition.planning.action_catalog import (
     ACTION_CATALOG,
     get_spec,
@@ -452,6 +455,14 @@ for _spec in ACTION_CATALOG.values():
 del _spec
 
 
+def _build_canonical_to_tool() -> Dict[str, str]:
+    from ...execution.tools.connector_bridge import CANONICAL_ALIASES
+    return {canonical: tool for tool, canonical in CANONICAL_ALIASES.items()}
+
+
+_CANONICAL_TO_TOOL: Dict[str, str] = _build_canonical_to_tool()
+
+
 def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
     """Resuelve el kind canónico de un Intent a su action del Executor.
 
@@ -463,7 +474,15 @@ def _map_kind_to_action(kind: Optional[str]) -> Optional[str]:
     allow). El mapeo no concede nada por sí mismo: sin regla de policy, el
     Executor no llega a ejecutar la tool.
     """
-    return ACTION_BY_KIND.get((kind or "").strip().lower())
+    k = (kind or "").strip().lower()
+    if not k:
+        return None
+    legacy = ACTION_BY_KIND.get(k)
+    if legacy is not None:
+        return legacy
+    if _get_canonical_spec(k) is None:
+        return None
+    return _CANONICAL_TO_TOOL.get(k)
 
 
 _ASSISTANT_AGENT_ID = "front_assistant"

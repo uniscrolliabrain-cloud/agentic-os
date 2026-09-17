@@ -16,10 +16,10 @@ from pydantic import BaseModel, Field
 
 from ..beliefs.belief import Belief
 from ..planning.intent import Intent
-from ..planning.action_catalog import (
+from ...connectors.core.capability_catalog import (
     catalog_prompt_block,
-    get_spec,
-    validate_params,
+    get_action_spec,
+    validate_action_params,
 )
 from ...interfaces.llm.provider import BaseLLMProvider, MockLLMProvider
 from ...interfaces.llm.prompts import SYSTEM_PROMPT, build_intent_proposal_prompt
@@ -44,10 +44,10 @@ def _augment_prompt_with_catalog(base_prompt: str) -> str:
 
 def _validate_intent(intent: Intent) -> Optional[Intent]:
     """Devuelve el Intent con payload validado o None si no pasa el schema."""
-    spec = get_spec(intent.kind)
+    spec = get_action_spec(intent.kind)
     if spec is None:
         return None
-    validated = validate_params(intent.kind, intent.payload)
+    validated = validate_action_params(intent.kind, intent.payload)
     if validated is None:
         return None
     # Reemplaza payload por el modelo validado y vuelca a dict estricto.

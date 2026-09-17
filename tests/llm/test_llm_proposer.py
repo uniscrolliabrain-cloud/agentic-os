@@ -14,10 +14,14 @@ def test_deterministic_base_proposer():
 
 
 def test_llm_proposer_structured_proposal():
+    # Usa kinds reales del ACTION_CATALOG (Fase A). Los kinds desconocidos
+    # se descartan fail-closed en el LLMProposer.
     mock_response = IntentProposalResponse(
         intents=[
-            Intent(goal="Verify patient history", kind="review_record", rationale="Needed before diagnosis"),
-            Intent(goal="Check medication compatibility", kind="review_record", rationale="Safety invariant"),
+            Intent(goal="Verify patient history", kind="email.message.read", rationale="Needed before diagnosis",
+                   payload={"max_results": 5}),
+            Intent(goal="Check medication compatibility", kind="calendar.event.read", rationale="Safety invariant",
+                   payload={"max_results": 3}),
         ]
     )
     provider = MockLLMProvider(structured_response=mock_response)

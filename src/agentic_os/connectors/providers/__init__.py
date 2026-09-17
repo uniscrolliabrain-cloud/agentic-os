@@ -11,6 +11,16 @@ import os
 from typing import Any, Dict, List, Optional
 
 from ..core.config import ConnectorConfig
+from ..core.schemas import (
+    CalendarEventParams,
+    CalendarListParams,
+    FileReadParams,
+    FileWriteParams,
+    GenericParams,
+    ListParams,
+    SearchParams,
+    SendParams,
+)
 from ..factory import ConnectorFactory
 from .stub import StubConnector
 
@@ -22,12 +32,17 @@ PROVIDER_SPECS: Dict[str, Dict[str, Any]] = {
         "connector_id": "google",
         "provider": "Google",
         "auth_type": "oauth2",
-        "caps": [
-            "email.message.read", "email.message.send",
-            "file.read", "file.create",
-            "calendar.event.create", "calendar.event.read",
-            "video.upload", "analytics.metrics.get", "analytics.search.query",
-        ],
+        "capabilities": {
+            "email.message.read":       {"schema": ListParams,         "risk": "READ_ONLY"},
+            "email.message.send":       {"schema": SendParams,         "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "file.read":                {"schema": FileReadParams,     "risk": "READ_ONLY"},
+            "file.create":              {"schema": FileWriteParams,    "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "calendar.event.create":    {"schema": CalendarEventParams,"risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "calendar.event.read":      {"schema": CalendarListParams, "risk": "READ_ONLY"},
+            "video.upload":             {"schema": GenericParams,      "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "analytics.metrics.get":    {"schema": GenericParams,      "risk": "READ_ONLY"},
+            "analytics.search.query":   {"schema": SearchParams,       "risk": "READ_ONLY"},
+        },
         "oauth": {
             "client_id_env": "GOOGLE_CLIENT_ID",
             "client_secret_env": "GOOGLE_CLIENT_SECRET",
@@ -112,12 +127,25 @@ PROVIDER_SPECS.update(PROVIDER_SPECS_CONTENT_OPS)
 PROVIDER_SPECS.update(PROVIDER_SPECS_DATA_VOICE)
 
 
+def _extract_caps(spec: Dict[str, Any]) -> List[str]:
+    """Devuelve la lista de capabilities de un provider.
+
+    Acepta las dos formas:
+      - "capabilities": {"kind": {...}, ...}  (nuevo, con schema)
+      - "caps": ["kind", ...]                  (legacy, sin schema)
+    """
+    caps = spec.get("capabilities")
+    if isinstance(caps, dict):
+        return list(caps.keys())
+    return list(spec.get("caps") or [])
+
+
 def register_builtin_providers(factory: ConnectorFactory) -> None:
     """Registra builders para todos los providers del catálogo (SIN credenciales)."""
     for provider, spec in PROVIDER_SPECS.items():
         def _builder(
             cid=spec["connector_id"], prov=spec["provider"],
-            caps=list(spec["caps"]), auth=spec.get("auth_type", "none"),
+            caps=_extract_caps(spec), auth=spec.get("auth_type", "none"),
             oauth_cfg=spec.get("oauth"), token_env=spec.get("token_env"),
             base_cfg={"base_url": spec.get("base_url"), "note": spec.get("note")},
             config=None, credentials=None, connected=False,
@@ -139,7 +167,7 @@ def get_provider_spec(provider: str) -> Optional[Dict[str, Any]]:
 
 def get_provider_capabilities(provider: str) -> List[str]:
     spec = PROVIDER_SPECS.get(provider)
-    return list(spec["caps"]) if spec else []
+    return _extract_caps(spec) if spec else []
 
 
 def load_provider_credentials(provider: str, workspace: str = "default") -> Optional[Dict[str, Any]]:
