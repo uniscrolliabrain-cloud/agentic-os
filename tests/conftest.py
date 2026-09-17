@@ -33,3 +33,17 @@ def _test_encryption_key(monkeypatch):
     monkeypatch.setattr(settings, "credential_encryption_key", "test-secret-key-32-chars-long-abc!!")
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEY", "test-secret-key-32-chars-long-abc!!")
     cs_mod._module_fernet = None
+
+
+@pytest.fixture(autouse=True)
+def _restore_entity_registry():
+    """Snapshot del ENTITY_TYPE_REGISTRY, restaurado por test.
+
+    Evita contaminacion cruzada entre tests que registran kinds de dominio
+    (agencia.*, compiler.*, marketing.*).
+    """
+    from agentic_os.kernel.ontology.domain_models import ENTITY_TYPE_REGISTRY
+    snapshot = dict(ENTITY_TYPE_REGISTRY)
+    yield
+    ENTITY_TYPE_REGISTRY.clear()
+    ENTITY_TYPE_REGISTRY.update(snapshot)

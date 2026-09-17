@@ -22,7 +22,7 @@ class DeterministicIntentRouter:
         (("create event", "create an event", "create appointment", "schedule meeting", "agenda una reunion", "crear evento", "crear un evento", "crear cita", "crear una cita", "agendar reunion", "agendar una reunion", "programar reunion", "programar una reunion"), "create_event"),
         (("scrape web", "scrape website", "web scrape", "extraer pagina", "extraer una pagina", "scrapear web", "scrapear pagina", "scrapear una pagina"), "web_scrape"),
     )
-    _ACCENTS = str.maketrans({"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ü": "u", "ñ": "n"})
+    _ACCENTS = str.maketrans({"a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "n": "n"})
 
     @staticmethod
     def _normalize(message: str) -> str:
@@ -53,7 +53,6 @@ class Orchestrator:
         proposer: Optional[Proposer] = None,
         router: Optional[DeterministicIntentRouter] = None,
     ):
-        """log acepta cualquier EventLogRepository (in-memory, JSONL o Postgres)."""
         self.log = log
         self.llm = llm
         self.proposer = proposer or LLMProposer(provider=llm)
@@ -73,7 +72,6 @@ class Orchestrator:
         correlation_id: Optional[str] = None,
         command_id: Optional[str] = None,
     ) -> Intent:
-        """Propone una Intent determinista o mediante LLM y la audita."""
         role = self.current_role
         correlation_id = correlation_id or f"corr-{uuid.uuid4().hex}"
         command_id = command_id or f"cmd-{uuid.uuid4().hex}"
@@ -129,34 +127,45 @@ class Orchestrator:
         command_id=None,
         params=None,
     ):
-        """Ejecuta un pipeline del catálogo vía PipelineRunner -> Executor.
+        """Ejecuta un pipeline del catalogo del tenant via PipelineRunner.
 
-        El Executor es obligatorio y se inyecta de forma explícita. El
-        orquestador no construye un Executor interno ni ejecuta tools o
-        connectors: cualquier efecto externo pasa por el Executor inyectado.
-        `registry` se conserva por compatibilidad de call sites; la fuente
-        de tools es `executor.registry`.
+        El Executor es obligatorio y se inyecta explicitamente. El orquestador
+        no construye Executor interno ni ejecuta tools/connectors.
         """
-        from .pipelines import PIPELINES
+        from .pipelines.runner import (
+            PipelineRunner,
+            UnknownPipelineError,
+            get_tenant_pipelines,
+        )
+        from .pipelines.validation import assert_tenant_catalog_valid
 
-        if pipeline_id not in PIPELINES:
-            self.log.append(
-                Event(
-                    kind="ScheduledPipelineFailed",
-                    entity_id=f"pipeline://{pipeline_id}",
-                    tenant_id=tenant_id,
-                    actor_id="orchestrator",
-                    payload={"error": f"pipeline desconocido: {pipeline_id}"},
-                    correlation_id=correlation_id,
-                    command_id=command_id,
-                )
-            )
+        # Resolver tenant_slug desde TenantRegistry
+        tenant_slug = tenant_id
+        try:
+            from ..infrastructure.tenancy import TenantRegistry
+            t = TenantRegistry().get(tenant_id)
+            if t is not None:
+                tenant_slug = t.slug
+        except Exception:
+            pass
+
+        pipelines = get_tenant_pipelines(tenant_slug)
+        if pipeline_id not in pipelines:
+            self.log.append(Event(
+                kind="ScheduledPipelineFailed",
+                entity_id=f"pipeline://{pipeline_id}",
+                tenant_id=tenant_id,
+                actor_id="orchestrator",
+                payload={"error": f"pipeline desconocido: {pipeline_id}"},
+                correlation_id=correlation_id,
+                command_id=command_id,
+            ))
             return {"status": "UNKNOWN_PIPELINE", "pipeline_id": pipeline_id}
 
         if executor is None:
             raise TypeError(
                 "handle_pipeline requiere un Executor inyectado; "
-                "no se admite construcción interna ni ejecución directa"
+                "no se admite construccion interna ni ejecucion directa"
             )
 
         if registry is not None and registry is not executor.registry:
@@ -164,11 +173,10 @@ class Orchestrator:
                 "registry inyectado debe ser el mismo objeto que executor.registry"
             )
 
-        from .pipelines.runner import PipelineRunner
-        from .pipelines.validation import assert_catalog_valid
-
-        runner = PipelineRunner(executor=executor, llm=self.llm)
-        assert_catalog_valid(executor.registry)
+        runner = PipelineRunner(
+            executor=executor, llm=self.llm, tenant_slug=tenant_slug
+        )
+        assert_tenant_catalog_valid(tenant_slug, executor.registry)
 
         return runner.run(
             pipeline_id=pipeline_id,
@@ -176,4 +184,5 @@ class Orchestrator:
             params=params or {},
             correlation_id=correlation_id,
             command_id=command_id,
+            tenant_slug=tenant_slug,
         )

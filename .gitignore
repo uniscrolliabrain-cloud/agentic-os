@@ -1,111 +1,75 @@
 # ============================================================
-# Agentic OS — Git Ignore
+# Secretos (CRÍTICO)
 # ============================================================
-
-# ---------- Python ----------
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# ---------- Virtual environments ----------
-.venv/
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
-
-# ---------- Environment / secrets ----------
 .env
 .env.*
-.env*
 !.env.example
 .credentials/
 *.pem
 *.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
 
-# Streamlit secrets — NEVER commit API keys
-.streamlit/secrets.toml
+# ============================================================
+# Runtime state — NUNCA commitear
+# ============================================================
+data/tenants/*.json
+!data/tenants/registry.example.json
+data/conversations/
+data/eventlog/
+data/agents/locks/
+data/agents/queue.jsonl
+data/agents/intents/
+data/idempotency/
+data/creds/
+src/data/
 
-# ---------- Packaging / distribution ----------
-build/
-dist/
+# ============================================================
+# Artefactos de desarrollo de agentes
+# ============================================================
+.scratch/
+_*.py
+_*.txt
+_gitstatus.txt
+export
+HANDOFF_*.md
+PLAN_CLINE_*.md
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
 *.egg-info/
-.eggs/
-*.egg
-*.whl
-.Python
-MANIFEST
-
-# ---------- Test / coverage ----------
+.venv/
+venv/
+env/
 .pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# ---------- Type checking ----------
 .mypy_cache/
-
-# ---------- Linting / formatting ----------
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+.tox/
 
-# ---------- IDE / editors ----------
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# ---------- OS ----------
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# ---------- Node / Frontend ----------
+# ============================================================
+# Node
+# ============================================================
 node_modules/
 frontend/dist/
-frontend/.vite/
+uniscroll-interface/dist/
+.pnpm-store/
 
-# ---------- Temporary artifacts ----------
-_probe_im.py
-MASTER_PLAN.MD
-tests/MASTER_PLAN.MD
-estrategia_consolidada.md
-ontology_prompt_final.md
-ontology_prompt_finalv2.md
-# data/ ignorado por defecto; las excepciones de abajo re-incluyen solo lo versionado.
-# NOTA git: no se puede re-incluir un fichero si su directorio padre esta excluido,
-# por eso se ignoran contenidos (data/**) y se re-excluyen los directorios intermedios.
-data/**
-# --- directorios intermedios re-incluidos para que las excepciones funcionen ---
-!data/tenants/
-!data/policies/
-# Excepciones para tenant bor-agencia (MINIPROMPT 3.1)
-!data/tenants/registry.json
-!data/tenants/registry.example.json
-!data/policies/bor-agencia.json
-!data/tenants/bor-agencia/
-!data/tenants/bor-agencia/**
-# tenant agentic-compiler (compilador de tenants): su policy y su knowledge base
-# son la persona del compilador, no datos de cliente.
-!data/policies/agentic-compiler.json
-!data/tenants/agentic-compiler/
-!data/tenants/agentic-compiler/**
-
-# ---------- Local runtime logs ----------
-*.log
-*.err.log
-.aider*
-
-# --- Higiene del repo (CHUNK 2) ---
-.scratch/
-# (regla antigua eliminada: data/tenants/*.json pisaba las excepciones de tenants versionados)
-!data/tenants/registry.example.json
-# tenant agentic-compiler (compilador de tenants): su policy y su knowledge base
-# son la persona del compilador, no datos de cliente.
-!data/policies/agentic-compiler.json
-!data/tenants/agentic-compiler/
-!data/tenants/agentic-compiler/**
-data/eventlog/*.jsonl
-data/idempotency/**
-data/conversations/*.json
+# ============================================================
+# Editors / OS
+# ============================================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

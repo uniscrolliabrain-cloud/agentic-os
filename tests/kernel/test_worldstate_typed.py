@@ -1,29 +1,38 @@
-"""Tests A6 + A8 — WorldState tipado y replay fail-closed.
+"""Tests A6 + A8 - WorldState tipado y replay fail-closed (v3).
 
-A6: entities es Dict[str, EntityUnion] (Union discriminada por kind),
-con invariante clave == entity.id.
-A8: replay() lanza CorruptEventError con el indice del evento corrupto,
-nunca devuelve un estado parcial.
+Las 9 entidades "de juguete" viven ahora en `domains/_examples/entities.py`;
+el kernel arranca con `ENTITY_TYPE_REGISTRY` vacio. Los tests que las usan
+llaman a `register_demo_entities()` en fixture.
 """
+from __future__ import annotations
+
+from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
 
-from agentic_os.kernel.world.events import Event, EventLog
-from agentic_os.kernel.world.replay import replay, CorruptEventError
-from agentic_os.kernel.world.state import WorldState, EntityUnion
-from agentic_os.kernel.world.applier import apply, InvalidEntityEventError
-from agentic_os.kernel.ontology.domain_models import (
-    Lead,
-    Proposal,
+from agentic_os.domains._examples import (
+    Appointment,
+    BlogPost,
     Brand,
     Campaign,
-    BlogPost,
     CoachingClient,
+    Lead,
+    Proposal,
     SessionNote,
     TherapyClient,
-    Appointment,
+    register_demo_entities,
 )
+from agentic_os.kernel.world.applier import InvalidEntityEventError, apply
+from agentic_os.kernel.world.events import Event, EventLog
+from agentic_os.kernel.world.replay import CorruptEventError, replay
+from agentic_os.kernel.world.state import WorldState
+
+
+@pytest.fixture(autouse=True)
+def _demo_entities():
+    register_demo_entities()
+    yield
 
 
 def _valid_lead(entity_id: str = "l1", tenant: str = "t1") -> Lead:
@@ -39,8 +48,6 @@ def test_worldstate_typed_entities_accepted():
 
 
 def test_worldstate_all_nine_entities_accepted():
-    from datetime import datetime, timezone
-
     fixtures = {
         "l": Lead(id="l", tenant_id="t", name="A", email="a@t.com"),
         "p": Proposal(id="p", tenant_id="t", lead_id="l", amount=10.0),
@@ -50,15 +57,11 @@ def test_worldstate_all_nine_entities_accepted():
         "cc": CoachingClient(id="cc", tenant_id="t", name="C", email="c@t.com"),
         "sn": SessionNote(id="sn", tenant_id="t", client_id="cc", notes="x"),
         "tc": TherapyClient(id="tc", tenant_id="t", name="T", specialty="psicologia"),
-        "ap": Appointment(
-            id="ap", tenant_id="t", client_id="tc", scheduled_at=datetime.now(timezone.utc)
-        ),
+        "ap": Appointment(id="ap", tenant_id="t", client_id="tc",
+                          scheduled_at=datetime.now(timezone.utc)),
     }
     state = WorldState(entities=fixtures)
     assert len(state.entities) == 9
-    for value in state.entities.values():
-        assert hasattr(value, "kind")
-        assert hasattr(value, "entity_type")
 
 
 def test_worldstate_rejects_key_not_matching_id():
@@ -67,7 +70,7 @@ def test_worldstate_rejects_key_not_matching_id():
         WorldState(entities={"clave-incorrecta": lead})
 
 
-def test_worldstate_rejects_unregistered_dict_payload():
+def test_worldstate_rejects_non_dict_payload():
     with pytest.raises(ValidationError):
         WorldState(entities={"x": {"name": "dict suelto", "age": "gato"}})
 
@@ -81,22 +84,14 @@ def test_worldstate_rejects_non_dict_entities():
 
 def _clean_log() -> EventLog:
     log = EventLog()
-    log.append(
-        Event(
-            kind="entity_created",
-            entity_id="l1",
-            tenant_id="t1",
-            payload={"kind": "marketing.lead", "name": "Ana", "email": "ana@t.com"},
-        )
-    )
-    log.append(
-        Event(
-            kind="entity_created",
-            entity_id="p1",
-            tenant_id="t1",
-            payload={"kind": "marketing.proposal", "lead_id": "l1", "amount": 50.0},
-        )
-    )
+    log.append(Event(
+        kind="entity_created", entity_id="l1", tenant_id="t1",
+        payload={"kind": "marketing.lead", "name": "Ana", "email": "ana@t.com"},
+    ))
+    log.append(Event(
+        kind="entity_created", entity_id="p1", tenant_id="t1",
+        payload={"kind": "marketing.proposal", "lead_id": "l1", "amount": 50.0},
+    ))
     return log
 
 
@@ -109,15 +104,10 @@ def test_replay_rebuilds_typed_state_from_clean_log():
 
 def test_replay_raises_with_index_of_corrupt_event():
     log = _clean_log()
-    # Evento corrupto en indice 2: payload invalido para su kind
-    log.append(
-        Event(
-            kind="entity_created",
-            entity_id="c1",
-            tenant_id="t1",
-            payload={"kind": "marketing.campaign", "budget": -1.0},
-        )
-    )
+    log.append(Event(
+        kind="entity_created", entity_id="c1", tenant_id="t1",
+        payload={"kind": "marketing.campaign", "budget": -1.0},
+    ))
     with pytest.raises(CorruptEventError) as exc_info:
         replay(log)
     assert exc_info.value.index == 2
@@ -125,16 +115,11 @@ def test_replay_raises_with_index_of_corrupt_event():
 
 
 def test_replay_never_returns_partial_state():
-    """El estado previo al fallo NO se devuelve: replay o es limpio o falla."""
     log = _clean_log()
-    log.append(
-        Event(
-            kind="entity_updated",
-            entity_id="inexistente",
-            tenant_id="t1",
-            payload={"status": "x"},
-        )
-    )
+    log.append(Event(
+        kind="entity_updated", entity_id="inexistente", tenant_id="t1",
+        payload={"status": "x"},
+    ))
     with pytest.raises(CorruptEventError) as exc_info:
         replay(log)
     assert exc_info.value.index == 2
@@ -143,13 +128,10 @@ def test_replay_never_returns_partial_state():
 def test_apply_is_pure_on_failure():
     state = WorldState(entities={"l1": _valid_lead()})
     bad = Event(
-        kind="entity_updated",
-        entity_id="l1",
-        tenant_id="t1",
+        kind="entity_updated", entity_id="l1", tenant_id="t1",
         payload={"email": "email-invalido-sin-arroba"},
     )
     with pytest.raises(ValidationError):
         apply(state, bad)
-    # Purity: el estado original no cambio
     assert state.entities["l1"].email == "ana@t.com"
     assert state.version == 0

@@ -1,4 +1,4 @@
-"""Tests del Compilador Ontológico (FASE 2).
+"""Tests del Compilador Ontologico (FASE 2).
 
 Valida que el YAML de dominio genera capabilities tipadas, que cada canonical
 resuelve en el Connector Kernel, y que el dry-run devuelve preview sin efecto.
@@ -19,7 +19,7 @@ from agentic_os.connectors.core.models import Command, HealthStatus
 from agentic_os.connectors.providers import PROVIDER_SPECS, register_builtin_providers
 from agentic_os.kernel.ontology.capabilities import Capability
 
-YAML_PATH = PROJ / "src" / "agentic_os" / "domains" / "marketing_ficticio" / "ontology.yaml"
+YAML_PATH = PROJ / "examples" / "marketing_ficticio" / "ontology.yaml"
 
 
 @pytest.fixture()
@@ -39,7 +39,7 @@ def registry() -> CapabilityRegistry:
 
 def test_domain_yaml_valido(domain):
     assert domain["domain"] == "marketing_ficticio"
-    assert len(domain["vocabulary"]["entities"]) == 3  # lead, cita, campana
+    assert len(domain["vocabulary"]["entities"]) == 3
     assert len(domain["vocabulary"]["capabilities"]) == 6
 
 
@@ -62,7 +62,6 @@ def test_canonical_resuelve_en_registry(domain, registry):
 
 
 def test_dry_run_devuelve_preview(registry):
-    """Un Command dry-run sobre una capability del dominio devuelve preview, nunca ejecuta."""
     router = ConnectorRouter(registry)
     cmd = Command(
         capability="crm.deal.create",
@@ -75,5 +74,4 @@ def test_dry_run_devuelve_preview(registry):
     assert res.preview is not None
     assert res.preview["capability"] == "crm.deal.create"
     assert res.preview["connector"] == "hubspot"
-    # El connector es un stub sin conectar: nunca toca el mundo real
     assert "never" in res.preview["note"] or "dry-run" in res.preview["note"]

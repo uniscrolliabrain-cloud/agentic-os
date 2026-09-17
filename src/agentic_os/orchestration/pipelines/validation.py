@@ -1,48 +1,43 @@
-"""Validación del catálogo de pipelines (sección 6 de hardening).
-
-Detecta ANTES de runtime referencias rotas: tool no registrada, pipeline
-declarado sin MicroActions, capability inexistente en el Connector Kernel.
-Falla temprano con errores claros.
-"""
-
+"""Validacion de catalogo de pipelines por tenant."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, List
 
-from . import PIPELINES, PIPELINE_TOOLS
+from .runner import get_tenant_pipelines
 
 
 class CatalogValidationError(Exception):
-    """Un pipeline referencia algo que no existe o está vacío."""
+    """Pipeline con referencias rotas o vacio."""
 
 
-def validate_pipeline_tools(registry: Any, pipeline_ids: List[str]) -> List[str]:
-    """Devuelve la lista de errores de referencias rotas en los pipelines dados.
-
-    Cada error es una cadena descriptiva; si la lista es vacía, todo es válido.
-    """
+def validate_tenant_pipelines(tenant_slug: str, registry: Any) -> List[str]:
     errors: List[str] = []
-    for pid in pipeline_ids:
-        if pid not in PIPELINES:
-            errors.append(f"pipeline inexistente: {pid}")
+    pipelines = get_tenant_pipelines(tenant_slug)
+    if not pipelines:
+        errors.append(f"tenant '{tenant_slug}' no declara pipelines")
+        return errors
+    for pid, pipeline in pipelines.items():
+        steps = getattr(pipeline, "steps", [])
+        if not steps:
+            errors.append(f"pipeline '{pid}' sin steps")
             continue
-        required = PIPELINE_TOOLS.get(pid, [])
-        if not required:
-            errors.append(f"pipeline '{pid}' no declara ninguna MicroAction (vacío)")
-            continue
-        for tool in required:
-            if registry is not None and registry.get(tool) is None:
-                errors.append(f"pipeline '{pid}' referencia tool no registrada: {tool}")
+        for step in steps:
+            tool_name = getattr(step, "tool", "")
+            if registry is not None and registry.get_optional(tool_name) is None:
+                errors.append(
+                    f"pipeline '{pid}' referencia tool no registrada: {tool_name}"
+                )
     return errors
 
 
-def validate_all_pipelines(registry: Any) -> List[str]:
-    """Valida todos los pipelines del catálogo."""
-    return validate_pipeline_tools(registry, list(PIPELINES.keys()))
-
-
-def assert_catalog_valid(registry: Any) -> None:
-    """Lanza CatalogValidationError si el catálogo tiene referencias rotas."""
-    errors = validate_all_pipelines(registry)
+def assert_tenant_catalog_valid(tenant_slug: str, registry: Any) -> None:
+    errors = validate_tenant_pipelines(tenant_slug, registry)
     if errors:
-        raise CatalogValidationError("catálogo inválido: " + "; ".join(errors))
+        raise CatalogValidationError("; ".join(errors))
+
+
+__all__ = [
+    "CatalogValidationError",
+    "validate_tenant_pipelines",
+    "assert_tenant_catalog_valid",
+]

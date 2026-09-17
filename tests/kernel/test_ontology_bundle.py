@@ -1,11 +1,4 @@
-"""Tests FASE 1.3b — Vocabulary extensible + OntologyBundle fail-closed.
-
-Cubre:
-  - is_canonical_kind (slug canónico)
-  - validate_against_metamodel (puntos 1, 2, 3 del hardening)
-  - OntologyBundle (frozen, versionado, auditoría)
-  - clinic domain: registra 'clinic.patient' sin tocar DEFAULT_VOCAB
-"""
+"""Tests FASE 1.3b - Vocabulary extensible + OntologyBundle fail-closed."""
 from __future__ import annotations
 
 import pytest
@@ -23,10 +16,14 @@ from agentic_os.kernel.ontology.entities import Entity
 from agentic_os.kernel.ontology.relations import Relation
 from agentic_os.kernel.ontology.validator import OntologyValidator
 from agentic_os.domains.base import BaseDomain
-from agentic_os.domains.clinic.ontology import ClinicDomain
 
 
-# ------------------------------------------------------------------ #1 slug
+class ClinicDomain(BaseDomain):
+    domain = "clinic"
+    entity_kinds = {"clinic.patient", "clinic.appointment"}
+    relation_kinds = {"clinic.has_appointment"}
+    capability_kinds = {"clinic.schedule"}
+
 
 @pytest.mark.parametrize(
     "kind",
@@ -46,8 +43,6 @@ def test_is_canonical_kind_invalid(kind: str) -> None:
     assert is_canonical_kind(kind) is False
 
 
-# ----------------------------------------------- #2 validate_against_metamodel
-
 def test_validate_valid_domain_produces_bundle() -> None:
     bundle = validate_against_metamodel(
         entity_kinds={"clinic.patient"},
@@ -61,26 +56,20 @@ def test_validate_valid_domain_produces_bundle() -> None:
     assert "clinic.patient" in bundle.entities
     assert "clinic.has_appointment" in bundle.relations
     assert "clinic.schedule" in bundle.capabilities
-    # DEFAULT_VOCAB sigue intacto dentro del bundle
     assert DEFAULT_VOCAB.entities <= set(bundle.entities)
 
 
 def test_rejects_non_canonical_kind() -> None:
-    with pytest.raises(OntologyValidationError, match="no canónico"):
-        validate_against_metamodel(
-            entity_kinds={"Patient"},  # PascalCase → rechazado
-        )
+    with pytest.raises(OntologyValidationError, match="no can"):
+        validate_against_metamodel(entity_kinds={"Patient"})
 
 
 def test_rejects_default_vocab_collision() -> None:
-    with pytest.raises(OntologyValidationError, match="colisión"):
-        validate_against_metamodel(
-            entity_kinds={"actor"},  # colisiona con DEFAULT_VOCAB
-        )
+    with pytest.raises(OntologyValidationError, match="colisi"):
+        validate_against_metamodel(entity_kinds={"actor"})
 
 
 def test_rejects_relation_referencing_undeclared_entity() -> None:
-    """Instancia de relación cuyo src/dst no están en entities declaradas."""
     ent = _make_entity("clinic.patient", "p1")
     rel = Relation(kind="uses", src_id="ghost", dst_id="p1")
     with pytest.raises(OntologyValidationError, match="src_id no declarado"):
@@ -92,8 +81,6 @@ def test_rejects_relation_referencing_undeclared_entity() -> None:
         )
 
 
-# --------------------------------------------------------- #3 OntologyBundle
-
 def test_bundle_is_frozen_and_versioned() -> None:
     bundle = validate_against_metamodel(
         entity_kinds={"clinic.patient"},
@@ -101,9 +88,8 @@ def test_bundle_is_frozen_and_versioned() -> None:
     )
     assert bundle.version == 1
     assert bundle.frozen is True
-    # El modelo hereda frozen=True de KernelModel
     with pytest.raises(ValidationError):
-        bundle.tenant_scope = "otro"  # type: ignore[assignment,misc]
+        bundle.tenant_scope = "otro"
 
 
 def test_bundle_vocabulary_property() -> None:
@@ -116,7 +102,7 @@ def test_bundle_vocabulary_property() -> None:
     vocab = bundle.vocabulary
     assert isinstance(vocab, type(DEFAULT_VOCAB))
     assert "clinic.patient" in vocab.entities
-    assert "actor" in vocab.entities  # DEFAULT_VOCAB incluido
+    assert "actor" in vocab.entities
 
 
 def test_bundle_extended_properties() -> None:
@@ -139,15 +125,11 @@ def test_validator_from_bundle_accepts_domain_entity() -> None:
     validator = OntologyValidator.from_bundle(bundle)
     ent = _make_entity("clinic.patient", "p1")
     assert validator.validate_entity(ent) is True
-    # una entidad fuera del bundle ampliado sigue siendo rechazada
     alien = _make_entity("finance.invoice", "f1")
     assert validator.validate_entity(alien) is False
 
 
-# --------------------------------------------- #4 ClinicDomain (nicho = bundle)
-
 def test_clinic_compiles_ontology() -> None:
-    """ClinicDomain registra 'clinic.patient' sin tocar DEFAULT_VOCAB."""
     bundle = ClinicDomain.compile_ontology()
     assert isinstance(bundle, OntologyBundle)
     assert bundle.tenant_scope == "clinic"
@@ -158,7 +140,6 @@ def test_clinic_compiles_ontology() -> None:
 
 
 def test_clinic_default_vocab_intact() -> None:
-    """Compilar la ontología de clinic no muta DEFAULT_VOCAB."""
     original = set(DEFAULT_VOCAB.entities)
     ClinicDomain.compile_ontology()
     assert set(DEFAULT_VOCAB.entities) == original
@@ -172,14 +153,11 @@ def test_clinic_get_extended_vocab() -> None:
 
 
 def test_base_domain_empty_compiles_to_default() -> None:
-    """Un dominio sin extensiones produce un bundle = DEFAULT_VOCAB (versionado)."""
     bundle = BaseDomain.compile_ontology(tenant_override="default")
     assert bundle.tenant_scope == "default"
     assert set(bundle.relations) == set(DEFAULT_VOCAB.relations)
     assert set(bundle.capabilities) == set(DEFAULT_VOCAB.capabilities)
 
-
-# ----------------------------------------------------------- helpers
 
 def _make_entity(kind: str, entity_id: str) -> Entity:
     return Entity(

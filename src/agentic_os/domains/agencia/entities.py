@@ -1,10 +1,4 @@
-"""Entidades del dominio `agencia` (FASE 1 — PLAN_AGENCIA_TENANT.md).
-
-Seis entidades Pydantic **strict** (``frozen=True``, ``extra="forbid"``,
-``validate_assignment=True``, ``use_enum_values=True``) registradas en
-``ENTITY_TYPE_REGISTRY`` del kernel. Un payload que no valida aquí **no
-existe** para el kernel (fail-closed).
-"""
+"""Entidades del dominio `agencia` (FASE 1 - PLAN_AGENCIA_TENANT.md)."""
 from __future__ import annotations
 
 import re
@@ -17,37 +11,14 @@ from pydantic import Field, field_validator, model_validator
 from ...kernel.ontology.domain_models import BaseDomainModel
 from ...kernel.types import KernelModel
 
-# ---------------------------------------------------------------------------
-# Enumeraciones canónicas del dominio
-# ---------------------------------------------------------------------------
-
-LeadStatus = Literal[
-    "capturado", "validado", "contactado", "cita", "deal", "cerrado", "invalido"
-]
-
+LeadStatus = Literal["capturado", "validado", "contactado", "cita", "deal", "cerrado", "invalido"]
 DealStage = Literal["nuevo", "calificado", "propuesta", "ganado", "perdido", "cerrado"]
+ServiceKind = Literal["web_design", "web_redesign", "community_management", "ai_services", "agentic_services", "gmb_update", "seo"]
 
-ServiceKind = Literal[
-    "web_design",
-    "web_redesign",
-    "community_management",
-    "ai_services",
-    "agentic_services",
-    "gmb_update",
-    "seo",
-]
-
-# Kinds de entidad del dominio (para la ontología y el registro).
-AGENCIA_ENTITY_KINDS = frozenset(
-    {
-        "agencia.client",
-        "agencia.lead",
-        "agencia.appointment",
-        "agencia.deal",
-        "agencia.quote",
-        "agencia.audit_report",
-    }
-)
+AGENCIA_ENTITY_KINDS = frozenset({
+    "agencia.client", "agencia.lead", "agencia.appointment", "agencia.deal",
+    "agencia.quote", "agencia.audit_report", "agencia.social_post",
+})
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]?$")
 _PHONE_RE = re.compile(r"^\+?[0-9][0-9()\-\s]{5,}$")
@@ -62,7 +33,7 @@ def _validate_email(v: str) -> str:
 def _validate_phone(v: str) -> str:
     v = v.strip()
     if not v or not _PHONE_RE.match(v) or len(re.sub(r"\D", "", v)) < 7:
-        raise ValueError("phone invalido (formato E.164 basico: +34 6XX...)")
+        raise ValueError("phone invalido (formato E.164 basico)")
     return v
 
 
@@ -80,28 +51,14 @@ def _validate_not_empty(v: str, field: str) -> str:
     return v.strip()
 
 
-# ---------------------------------------------------------------------------
-# Value object de propuesta (embebido; no es entidad de WorldState)
-# ---------------------------------------------------------------------------
-
-
 class ServiceItem(KernelModel):
-    """Ítem de una propuesta de servicio cotizada."""
-
     service: ServiceKind
     description: str = Field(..., min_length=1)
     price: float = Field(..., ge=0)
     unit: str = ""
 
 
-# ---------------------------------------------------------------------------
-# Entidades del dominio agencia
-# ---------------------------------------------------------------------------
-
-
 class AgencyClient(BaseDomainModel):
-    """Cliente final servido por la agencia (dueño de sus credenciales)."""
-
     kind: Literal["agencia.client"] = "agencia.client"
     name: str
     slug: str
@@ -136,8 +93,6 @@ class AgencyClient(BaseDomainModel):
 
 
 class AgencyLead(BaseDomainModel):
-    """Prospecto capturado/validado para un cliente final."""
-
     kind: Literal["agencia.lead"] = "agencia.lead"
     client_id: str
     name: str
@@ -173,8 +128,6 @@ class AgencyLead(BaseDomainModel):
 
 
 class AgencyAppointment(BaseDomainModel):
-    """Cita agendada en el calendario del cliente final."""
-
     kind: Literal["agencia.appointment"] = "agencia.appointment"
     client_id: str
     lead_id: str
@@ -201,8 +154,6 @@ class AgencyAppointment(BaseDomainModel):
 
 
 class AgencyDeal(BaseDomainModel):
-    """Oportunidad comercial ligada a un lead y (opcionalmente) a una propuesta."""
-
     kind: Literal["agencia.deal"] = "agencia.deal"
     client_id: str
     lead_id: str
@@ -231,13 +182,11 @@ class AgencyDeal(BaseDomainModel):
 
 
 class ServiceQuote(BaseDomainModel):
-    """Propuesta de servicios («completo» o «partes») con link de pago."""
-
     kind: Literal["agencia.quote"] = "agencia.quote"
     client_id: str
     lead_id: Optional[str] = None
     service_items: List[ServiceItem] = Field(default_factory=list)
-    total: Optional[float] = None  # se calcula de los items si no se provee
+    total: Optional[float] = None
     currency: str = "EUR"
     stripe_link: Optional[str] = None
 
@@ -266,15 +215,11 @@ class ServiceQuote(BaseDomainModel):
         if self.total is None:
             object.__setattr__(self, "total", computed)
         elif abs(self.total - computed) > 0.005:
-            raise ValueError(
-                f"total ({self.total}) no coincide con la suma de los items ({computed})"
-            )
+            raise ValueError(f"total ({self.total}) no coincide con la suma de los items ({computed})")
         return self
 
 
 class AuditReport(BaseDomainModel):
-    """Auditoría web/SEO del prospecto que decide el paquete a vender."""
-
     kind: Literal["agencia.audit_report"] = "agencia.audit_report"
     client_id: str
     url: str
@@ -301,16 +246,16 @@ class AuditReport(BaseDomainModel):
         return v
 
 
+class SocialPost(BaseDomainModel):
+    kind: Literal["agencia.social_post"] = "agencia.social_post"
+    channel: Literal["meta", "linkedin", "tiktok"] = "meta"
+    copy: str = Field(min_length=1)
+    source_asset: str = ""
+    scheduled_at: Optional[datetime] = None
+
+
 __all__ = [
-    "AGENCIA_ENTITY_KINDS",
-    "LeadStatus",
-    "DealStage",
-    "ServiceKind",
-    "ServiceItem",
-    "AgencyClient",
-    "AgencyLead",
-    "AgencyAppointment",
-    "AgencyDeal",
-    "ServiceQuote",
-    "AuditReport",
+    "AGENCIA_ENTITY_KINDS", "LeadStatus", "DealStage", "ServiceKind", "ServiceItem",
+    "AgencyClient", "AgencyLead", "AgencyAppointment", "AgencyDeal",
+    "ServiceQuote", "AuditReport", "SocialPost",
 ]
