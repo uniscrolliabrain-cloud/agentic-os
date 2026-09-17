@@ -1,8 +1,8 @@
-"""domains.agencia: entidades y ontología del tenant «bor-agencia» (FASE 1).
+"""domains.agencia: tenant `bor-agencia`.
 
-Sin side-effects en import: el registro de entidades en
-``ENTITY_TYPE_REGISTRY`` es EXPLICITO, via ``AgenciaDomain.register_entities()``
-(camino canónico ``compile_ontology`` -> registro). Ver docs/INVARIANTS.md.
+Sin side-effects en import. El registro de entidades es EXPLICITO
+(``AgenciaDomain.register_entities()``). Los pipelines y SOPs son modelos
+Pydantic propios del tenant.
 """
 from .entities import (
     AGENCIA_ENTITY_KINDS,
@@ -13,10 +13,29 @@ from .entities import (
     AuditReport,
     ServiceItem,
     ServiceQuote,
+    SocialPost,
 )
+from .handlers import HANDLERS
 from .ontology import AgenciaDomain
+from .pipelines import PIPELINES, AgencyPipeline, PipelineStep
+from .sops import SOPS, SOP
+
+
+class _AgenciaDomainPack:
+    slug = "bor-agencia"
+    pipelines = PIPELINES
+    handlers = HANDLERS
+    sops = SOPS
+
+    @staticmethod
+    def register_entities() -> None:
+        AgenciaDomain.register_entities()
+
+
+DOMAIN = _AgenciaDomainPack()
 
 __all__ = [
+    "DOMAIN",
     "AGENCIA_ENTITY_KINDS",
     "AgenciaDomain",
     "AgencyClient",
@@ -26,4 +45,11 @@ __all__ = [
     "ServiceQuote",
     "ServiceItem",
     "AuditReport",
+    "SocialPost",
+    "PIPELINES",
+    "AgencyPipeline",
+    "PipelineStep",
+    "SOPS",
+    "SOP",
+    "HANDLERS",
 ]
