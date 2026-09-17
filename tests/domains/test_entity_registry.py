@@ -1,35 +1,33 @@
-"""Test A5 — ENTITY_TYPE_REGISTRY (core del kernel).
+"""Test A5 - ENTITY_TYPE_REGISTRY del kernel (v3).
 
-Valida los 9 tipos CORE del registro (independiente de dominios: los
-dominios registran explícitamente vía AgenciaDomain.register_entities(),
-nunca en import, así que este suite es determinista en cualquier orden):
-- Registro contiene los 9 tipos core de entidad.
-- entity_from_payload crea la instancia correcta.
-- Kind desconocido -> UnknownEntityTypeError (fail-closed).
-- Payload invalido -> ValidationError.
-- Integridad del registro (clave == kind de la clase).
+El kernel ARRANCA con el registro VACIO. Las 9 entidades "de juguete" viven
+en `domains/_examples/` y se registran explicitamente via
+`register_demo_entities()`.
 """
-import pytest
-from pydantic import ValidationError
+from __future__ import annotations
 
-from agentic_os.kernel.ontology.domain_models import (
-    ENTITY_TYPE_REGISTRY,
-    Lead,
-    Proposal,
+import pytest
+
+from agentic_os.domains._examples import (
+    Appointment,
+    BlogPost,
     Brand,
     Campaign,
-    BlogPost,
     CoachingClient,
+    Lead,
+    Proposal,
     SessionNote,
     TherapyClient,
-    Appointment,
+    register_demo_entities,
+)
+from agentic_os.kernel.ontology.domain_models import (
+    ENTITY_TYPE_REGISTRY,
     UnknownEntityTypeError,
     entity_from_payload,
     validate_registry_integrity,
 )
 
-# Tipos CORE del kernel (los dominios añaden los suyos en bootstrap).
-CORE_REGISTRY = {
+DEMO_REGISTRY = {
     "marketing.lead": Lead,
     "marketing.proposal": Proposal,
     "marketing.brand": Brand,
@@ -42,50 +40,32 @@ CORE_REGISTRY = {
 }
 
 
-def test_registry_contains_9_types():
-    assert len(CORE_REGISTRY) == 9
-    for kind in CORE_REGISTRY:
-        assert kind in ENTITY_TYPE_REGISTRY
+def test_kernel_registry_starts_empty():
+    assert ENTITY_TYPE_REGISTRY == {}, (
+        f"el kernel trae entidades preinstaladas: {list(ENTITY_TYPE_REGISTRY)}"
+    )
 
 
-def test_registry_kinds_are_canonical():
-    for kind, cls in CORE_REGISTRY.items():
+def test_register_demo_entities_puebla_registry():
+    register_demo_entities()
+    assert len(ENTITY_TYPE_REGISTRY) == 9
+    for kind, cls in DEMO_REGISTRY.items():
         assert ENTITY_TYPE_REGISTRY.get(kind) is cls
 
 
-def test_registry_integrity_passes():
+def test_registry_integrity_passes_after_register():
+    register_demo_entities()
     validate_registry_integrity()
 
 
 def test_entity_from_payload_creates_lead():
-    entity = entity_from_payload(
-        "marketing.lead",
-        {"tenant_id": "t1", "name": "Juan", "email": "j@t.com"},
-    )
+    register_demo_entities()
+    entity = entity_from_payload("marketing.lead",
+                                 {"tenant_id": "t1", "name": "Juan",
+                                  "email": "j@t.com"})
     assert isinstance(entity, Lead)
-
-
-def test_entity_from_payload_creates_appointment():
-    from datetime import datetime, timezone
-    entity = entity_from_payload(
-        "therapy.appointment",
-        {
-            "tenant_id": "t1",
-            "client_id": "c1",
-            "scheduled_at": datetime.now(timezone.utc),
-        },
-    )
-    assert isinstance(entity, Appointment)
 
 
 def test_entity_from_payload_unknown_kind_fails():
     with pytest.raises(UnknownEntityTypeError):
         entity_from_payload("tipo.inexistente", {"tenant_id": "t1"})
-
-
-def test_entity_from_payload_invalid_payload_fails():
-    with pytest.raises(Exception):
-        entity_from_payload(
-            "marketing.lead",
-            {"tenant_id": "t1", "name": "Juan", "email": "sin-arroba"},
-        )

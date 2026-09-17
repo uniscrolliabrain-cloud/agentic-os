@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .events import Event
-from .state import EntityUnion, WorldState
+from .state import WorldState
 from ..ontology.domain_models import entity_from_payload, UnknownEntityTypeError
 
 
