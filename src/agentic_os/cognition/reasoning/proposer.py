@@ -1,10 +1,26 @@
+"""Propuesta de Intents desde beliefs + goal.
+
+Invariante: el LLM propone, el sistema dispone. Este modulo SOLO produce
+Intents validados; nunca ejecuta acciones. Un Intent que no cumpla el
+schema de su kind se descarta en silencio (fail-closed).
+
+Fase A.2: el proposer conoce el catalogo de acciones (ACTION_CATALOG) y
+valida cada intent contra su schema antes de devolverlo. Lo que no valida,
+no llega al orchestrator.
+"""
 from __future__ import annotations
 
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 from ..beliefs.belief import Belief
 from ..planning.intent import Intent
+from ..planning.action_catalog import (
+    catalog_prompt_block,
+    get_spec,
+    validate_params,
+)
 from ...interfaces.llm.provider import BaseLLMProvider, MockLLMProvider
 from ...interfaces.llm.prompts import SYSTEM_PROMPT, build_intent_proposal_prompt
 from ...interfaces.llm.guardrails import guard_intents
@@ -13,6 +29,29 @@ from ...interfaces.llm.guardrails import guard_intents
 class IntentProposalResponse(BaseModel):
     """Structured container for LLM proposed intents."""
     intents: List[Intent] = Field(default_factory=list)
+
+
+def _augment_prompt_with_catalog(base_prompt: str) -> str:
+    """Anade el bloque del catalogo al prompt base. Determinista."""
+    return (
+        base_prompt
+        + "\n\n"
+        + catalog_prompt_block()
+        + "\n\nPara cada intent, incluye SIEMPRE el campo 'payload' con los "
+          "campos del kind elegido. Si te faltan datos, propone reply_to_user."
+    )
+
+
+def _validate_intent(intent: Intent) -> Optional[Intent]:
+    """Devuelve el Intent con payload validado o None si no pasa el schema."""
+    spec = get_spec(intent.kind)
+    if spec is None:
+        return None
+    validated = validate_params(intent.kind, intent.payload)
+    if validated is None:
+        return None
+    # Reemplaza payload por el modelo validado y vuelca a dict estricto.
+    return intent.model_copy(update={"payload": validated.model_dump()})
 
 
 class Proposer:
@@ -28,7 +67,11 @@ class Proposer:
 
 
 class LLMProposer(Proposer):
-    """LLM-backed proposer: proposes Intents, never Actions directly."""
+    """LLM-backed proposer: propone Intents validados contra el catalogo.
+
+    No ejecuta. Los Intents que no cumplen el schema de su kind se
+    descartan (fail-closed). El payload que sobrevive esta tipado.
+    """
 
     def __init__(
         self,
@@ -49,6 +92,7 @@ class LLMProposer(Proposer):
             beliefs=beliefs,
             domain_context=domain_context or self.domain_context,
         )
+        prompt = _augment_prompt_with_catalog(prompt)
 
         proposal_response = self.provider.generate_structured(
             prompt=prompt,
@@ -56,5 +100,15 @@ class LLMProposer(Proposer):
             system_instruction=SYSTEM_PROMPT,
         )
 
-        return guard_intents(proposal_response.intents)
+        # Fail-closed: se descartan los intents que no cumplen schema.
+        candidates = list(proposal_response.intents)
+        validated: List[Intent] = []
+        for intent in candidates:
+            v = _validate_intent(intent)
+            if v is not None:
+                validated.append(v)
 
+        return guard_intents(validated)
+
+
+__all__ = ["IntentProposalResponse", "Proposer", "LLMProposer"]

@@ -73,3 +73,9 @@ uniscroll-interface/dist/
 .DS_Store
 Thumbs.db
 *.swp
+# Runtime por tenant (carpetas del propio codigo)
+data/tenants/*/drafts/
+data/tenants/*/artifacts/
+data/tenants/*/chat/
+data/tenants/*/drive/
+data/tenants/*/schedules.json
