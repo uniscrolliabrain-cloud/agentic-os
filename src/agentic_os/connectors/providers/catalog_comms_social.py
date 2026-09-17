@@ -2,6 +2,16 @@
 
 from typing import Any, Dict
 
+from ..core.schemas import (
+    CreateParams,
+    DeleteParams,
+    ListParams,
+    PublishParams,
+    ReadParams,
+    SendParams,
+    UpdateParams,
+)
+
 PROVIDER_SPECS_COMMS_SOCIAL: Dict[str, Dict[str, Any]] = {
     "microsoft": {
         "connector_id": "microsoft", "provider": "Microsoft Graph", "auth_type": "oauth2",
@@ -34,8 +44,12 @@ PROVIDER_SPECS_COMMS_SOCIAL: Dict[str, Dict[str, Any]] = {
     },
     "whatsapp": {
         "connector_id": "whatsapp", "provider": "WhatsApp Business", "auth_type": "bearer",
-        "caps": ["whatsapp.message.send", "whatsapp.template.send",
-                 "whatsapp.media.send", "whatsapp.message.receive"],
+        "capabilities": {
+            "whatsapp.message.send": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "whatsapp.template.send": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "whatsapp.media.send": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "whatsapp.message.receive": {"schema": ListParams, "risk": "READ_ONLY", "requires_approval": False},
+        },
         "token_env": "WHATSAPP_ACCESS_TOKEN",
         "extra_env": ["WHATSAPP_PHONE_NUMBER_ID"],
         "base_url": "https://graph.facebook.com/v21.0",
@@ -49,10 +63,18 @@ PROVIDER_SPECS_COMMS_SOCIAL: Dict[str, Dict[str, Any]] = {
     },
     "meta": {
         "connector_id": "meta", "provider": "Meta", "auth_type": "oauth2",
-        "caps": ["social.post.create", "social.post.publish", "social.post.delete",
-                 "social.comment.read", "social.comment.reply", "social.metrics.get",
-                 "ads.campaign.create", "ads.campaign.update", "ads.campaign.pause",
-                 "ads.insights.get"],
+        "capabilities": {
+            "social.post.create": {"schema": CreateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "social.post.publish": {"schema": PublishParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "social.post.delete": {"schema": DeleteParams, "risk": "DESTRUCTIVE", "requires_approval": True},
+            "social.comment.read": {"schema": ListParams, "risk": "READ_ONLY", "requires_approval": False},
+            "social.comment.reply": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "social.metrics.get": {"schema": ReadParams, "risk": "READ_ONLY", "requires_approval": False},
+            "ads.campaign.create": {"schema": CreateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "ads.campaign.update": {"schema": UpdateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "ads.campaign.pause": {"schema": UpdateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "ads.insights.get": {"schema": ReadParams, "risk": "READ_ONLY", "requires_approval": False},
+        },
         "oauth": {"client_id_env": "META_APP_ID", "client_secret_env": "META_APP_SECRET",
                   "authorization_url": "https://www.facebook.com/v21.0/dialog/oauth",
                   "token_url": "https://graph.facebook.com/v21.0/oauth/access_token"},

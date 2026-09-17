@@ -2,6 +2,13 @@
 
 from typing import Any, Dict
 
+from ..core.schemas import (
+    CreateParams,
+    ListParams,
+    SearchParams,
+    SendParams,
+)
+
 PROVIDER_SPECS_CONTENT_OPS: Dict[str, Dict[str, Any]] = {
     "wordpress": {
         "connector_id": "wordpress", "provider": "WordPress", "auth_type": "basic",
@@ -58,8 +65,13 @@ PROVIDER_SPECS_CONTENT_OPS: Dict[str, Dict[str, Any]] = {
     },
     "smtp_imap": {
         "connector_id": "smtp_imap", "provider": "SMTP/IMAP", "auth_type": "password",
-        "caps": ["email.message.read", "email.message.search", "email.message.send",
-                 "email.message.reply", "email.draft.create"],
+        "capabilities": {
+            "email.message.read": {"schema": ListParams, "risk": "READ_ONLY", "requires_approval": False},
+            "email.message.search": {"schema": SearchParams, "risk": "READ_ONLY", "requires_approval": False},
+            "email.message.send": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "email.message.reply": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "email.draft.create": {"schema": CreateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+        },
         "extra_env": ["SMTP_HOST", "SMTP_PORT", "IMAP_HOST"],
         "token_env": "EMAIL_APP_PASSWORD",
         "extra_auth_env": ["EMAIL_USERNAME"],

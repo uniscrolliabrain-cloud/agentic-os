@@ -14,12 +14,18 @@ from ..core.config import ConnectorConfig
 from ..core.schemas import (
     CalendarEventParams,
     CalendarListParams,
+    CreateParams,
+    DeleteParams,
     FileReadParams,
     FileWriteParams,
     GenericParams,
     ListParams,
+    PaymentLinkParams,
+    PublishParams,
+    ReadParams,
     SearchParams,
     SendParams,
+    UpdateParams,
 )
 from ..factory import ConnectorFactory
 from .stub import StubConnector
@@ -91,11 +97,20 @@ PROVIDER_SPECS: Dict[str, Dict[str, Any]] = {
     },
     "stripe": {
         "connector_id": "stripe", "provider": "Stripe", "auth_type": "bearer",
-        "caps": ["finance.customer.create", "finance.customer.read",
-                 "commerce.product.create", "commerce.product.read",
-                 "finance.payment_link.create", "finance.invoice.create", "finance.invoice.read",
-                 "finance.invoice.send", "finance.subscription.create", "finance.subscription.read",
-                 "finance.subscription.update", "finance.refund.create"],
+        "capabilities": {
+            "finance.customer.create": {"schema": CreateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "finance.customer.read": {"schema": ReadParams, "risk": "READ_ONLY", "requires_approval": False},
+            "commerce.product.create": {"schema": CreateParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+            "commerce.product.read": {"schema": ReadParams, "risk": "READ_ONLY", "requires_approval": False},
+            "finance.payment_link.create": {"schema": PaymentLinkParams, "risk": "FINANCIAL", "requires_approval": True},
+            "finance.invoice.create": {"schema": CreateParams, "risk": "FINANCIAL", "requires_approval": True},
+            "finance.invoice.read": {"schema": ReadParams, "risk": "READ_ONLY", "requires_approval": False},
+            "finance.invoice.send": {"schema": SendParams, "risk": "FINANCIAL", "requires_approval": True},
+            "finance.subscription.create": {"schema": CreateParams, "risk": "FINANCIAL", "requires_approval": True},
+            "finance.subscription.read": {"schema": ReadParams, "risk": "READ_ONLY", "requires_approval": False},
+            "finance.subscription.update": {"schema": UpdateParams, "risk": "FINANCIAL", "requires_approval": True},
+            "finance.refund.create": {"schema": CreateParams, "risk": "FINANCIAL", "requires_approval": True},
+        },
         "token_env": "STRIPE_SECRET_KEY",
     },
     "vercel": {
@@ -109,8 +124,12 @@ PROVIDER_SPECS: Dict[str, Dict[str, Any]] = {
     },
     "slack": {
         "connector_id": "slack", "provider": "Slack", "auth_type": "bearer",
-        "caps": ["communication.message.send", "communication.channel.read",
-                 "communication.message.search", "communication.file.upload"],
+        "capabilities": {
+            "communication.message.send": {"schema": SendParams, "risk": "EXTERNAL_COMMUNICATION", "requires_approval": True},
+            "communication.channel.read": {"schema": ListParams, "risk": "READ_ONLY", "requires_approval": False},
+            "communication.message.search": {"schema": SearchParams, "risk": "READ_ONLY", "requires_approval": False},
+            "communication.file.upload": {"schema": FileWriteParams, "risk": "LOW_RISK_WRITE", "requires_approval": False},
+        },
         "token_env": "SLACK_BOT_TOKEN",
     },
 }
