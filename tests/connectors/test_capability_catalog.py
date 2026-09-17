@@ -96,7 +96,7 @@ def test_action_spec_es_inmutable():
 def test_action_spec_rechaza_extra():
     with pytest.raises(Exception):
         ActionSpec(
-            kind="x", provider="y",
+            kind="x", providers=("y",),
             params_schema=SendParams, risk=RiskClass.READ_ONLY,
             campo_inventado="boom",
         )

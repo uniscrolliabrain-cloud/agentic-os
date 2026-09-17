@@ -254,12 +254,22 @@ def validate_action_params(kind: str, payload: Any) -> Optional[BaseModel]:
         return None
 
 
+_PROMPT_CACHE: Optional[str] = None
+
+
 def catalog_prompt_block() -> str:
     """Bloque de texto para inyectar en el system prompt del LLM.
 
     Formato compacto: kind + riesgo + approval + campos. Sin providers
     (el LLM no debe elegir provider; lo hace el router del kernel).
+
+    Cacheado: la primera llamada lo construye, las siguientes lo devuelven
+    directo. El catalogo es inmutable en runtime, asi que no hay invalidacion.
     """
+    global _PROMPT_CACHE
+    if _PROMPT_CACHE is not None:
+        return _PROMPT_CACHE
+
     lines = ["Acciones disponibles (usa SOLO estos kind):"]
     # Internas primero.
     for spec in _INTERNAL_ACTIONS.values():
@@ -275,7 +285,9 @@ def catalog_prompt_block() -> str:
         lines.append(f"- {kind}: [{spec.risk}]{approval} {spec.description}")
         if fields:
             lines.append(f"    campos: {fields}")
-    return "\n".join(lines)
+
+    _PROMPT_CACHE = "\n".join(lines)
+    return _PROMPT_CACHE
 
 
 __all__ = [

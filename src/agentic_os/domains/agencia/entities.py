@@ -249,7 +249,7 @@ class AuditReport(BaseDomainModel):
 class SocialPost(BaseDomainModel):
     kind: Literal["agencia.social_post"] = "agencia.social_post"
     channel: Literal["meta", "linkedin", "tiktok"] = "meta"
-    copy: str = Field(min_length=1)
+    content: str = Field(min_length=1)
     source_asset: str = ""
     scheduled_at: Optional[datetime] = None
 

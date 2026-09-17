@@ -224,7 +224,7 @@ def handle_daily_social(runner: Any, tenant_id: str,
             tenant_id=tenant_id,
             entity_type="agencia.social_post",
             channel="meta",
-            copy=copy,
+            content=copy,
             source_asset=candidate.get("name", ""),
         )
     except Exception as exc:
