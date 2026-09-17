@@ -457,7 +457,14 @@ del _spec
 
 def _build_canonical_to_tool() -> Dict[str, str]:
     from ...execution.tools.connector_bridge import CANONICAL_ALIASES
-    return {canonical: tool for tool, canonical in CANONICAL_ALIASES.items()}
+    # First-wins: varios tools mapean a la misma capability (drive_list_files,
+    # drive_read_file, drive_search -> file.read). Nos quedamos con el PRIMERO
+    # declarado en CANONICAL_ALIASES para que sea determinista.
+    result: Dict[str, str] = {}
+    for tool, canonical in CANONICAL_ALIASES.items():
+        if canonical not in result:
+            result[canonical] = tool
+    return result
 
 
 _CANONICAL_TO_TOOL: Dict[str, str] = _build_canonical_to_tool()
@@ -779,6 +786,7 @@ def _execute_intent(
         correlation_id=correlation_id,
         command_id=command_id,
         actor_id="orchestrator",
+        capability=intent.kind,
     )
     if not result.get("success"):
         note = f"rechazada/fallo '{action}': {result.get('error')}"

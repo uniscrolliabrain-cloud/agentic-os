@@ -35,7 +35,7 @@ def test_deterministic_router_precedes_llm_proposer() -> None:
 
     intent = orchestrator.handle_user_message("Enviar un email ahora")
 
-    assert intent.kind == "send_email"
+    assert intent.kind == "email.message.send"
     assert intent.rationale == "deterministic router"
     assert proposer.calls == []
 

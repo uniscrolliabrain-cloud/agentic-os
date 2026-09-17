@@ -17,18 +17,18 @@ class DeterministicIntentRouter:
     _ROUTES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
         (("hello", "hi", "hey", "buenos dias", "buenas tardes", "buenas noches", "gracias"), "reply_to_user"),
         # ESCRIBIR / ENVIAR
-        (("send email", "enviar email", "envia email", "envia un email", "enviar un email", "manda email", "manda un email", "enviar correo", "envia correo", "envia un correo", "manda correo", "manda un correo"), "send_email"),
-        (("send slack", "enviar slack", "envia slack", "manda slack"), "send_slack"),
-        (("send whatsapp", "enviar whatsapp", "envia whatsapp", "manda whatsapp"), "send_whatsapp"),
+        (("send email", "enviar email", "envia email", "envia un email", "enviar un email", "manda email", "manda un email", "enviar correo", "envia correo", "envia un correo", "manda correo", "manda un correo"), "email.message.send"),
+        (("send slack", "enviar slack", "envia slack", "manda slack"), "communication.message.send"),
+        (("send whatsapp", "enviar whatsapp", "envia whatsapp", "manda whatsapp"), "whatsapp.message.send"),
         # CALENDARIO
-        (("create event", "crear evento", "crear un evento", "crear cita", "crear una cita", "agendar reunion", "agenda una reunion", "agendar una reunion", "programar reunion", "schedule meeting"), "create_event"),
-        (("ver calendario", "mi calendario", "proximos eventos", "lista de eventos", "listar eventos", "mis eventos", "que eventos"), "list_events"),
+        (("create event", "crear evento", "crear un evento", "crear cita", "crear una cita", "agendar reunion", "agenda una reunion", "agendar una reunion", "programar reunion", "schedule meeting"), "calendar.event.create"),
+        (("ver calendario", "mi calendario", "proximos eventos", "lista de eventos", "listar eventos", "mis eventos", "que eventos"), "calendar.event.read"),
         # LEER / LISTAR
-        (("leer correos", "lee correos", "lee los correos", "lee los ultimos", "ver correos", "mis correos", "mi bandeja", "leer bandeja", "lee la bandeja", "correos sin leer", "ultimos correos", "buzon", "inbox"), "read_email"),
-        (("listar drive", "lista drive", "mis ficheros", "mis archivos", "mi drive", "ver drive", "ver mis ficheros", "ver mis archivos", "listar ficheros", "listar archivos"), "list_drive"),
+        (("leer correos", "lee correos", "lee los correos", "lee los ultimos", "ver correos", "mis correos", "mi bandeja", "leer bandeja", "lee la bandeja", "correos sin leer", "ultimos correos", "buzon", "inbox"), "email.message.read"),
+        (("listar drive", "lista drive", "mis ficheros", "mis archivos", "mi drive", "ver drive", "ver mis ficheros", "ver mis archivos", "listar ficheros", "listar archivos"), "file.read"),
         # WEB
-        (("scrape web", "scrapear", "extraer pagina", "extraer una pagina"), "scrape_web"),
-        (("buscar en la web", "busca en la web", "buscar web", "googlea", "search web"), "search_web"),
+        (("scrape web", "scrapear", "extraer pagina", "extraer una pagina"), "web.page.extract"),
+        (("buscar en la web", "busca en la web", "buscar web", "googlea", "search web"), "web.search"),
     )
     _ACCENTS = str.maketrans({"a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "n": "n"})
 
