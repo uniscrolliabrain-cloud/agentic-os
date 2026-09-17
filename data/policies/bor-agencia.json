@@ -267,6 +267,12 @@
       "description": "Canonical whatsapp.message.receive"
     },
     {
+      "id": "r_pipeline_run",
+      "capability": "run_pipeline",
+      "description": "Despacho a PipelineRunner del tenant. Las tools DENTRO del pipeline pasan por policy una a una via Executor; esta regla solo autoriza el DESPACHO, no las acciones concretas.",
+      "effect": "allow"
+    },
+    {
       "capability": "*",
       "description": "Red de seguridad: resto denegado",
       "effect": "deny",
