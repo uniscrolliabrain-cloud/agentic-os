@@ -649,12 +649,156 @@ def _remember_orchestration_result(
         logger.warning("no se pudo persistir resultado de orquestacion: %s", exc)
 
 
+def _execute_pipeline_intent(
+    intent: Intent,
+    tenant,
+    correlation_id: str,
+    command_id: str,
+) -> Dict[str, Any]:
+    """Despacha un Intent(kind="run_pipeline") al PipelineRunner.
+
+    Gate de policy: el tenant debe tener la capability "run_pipeline"
+    habilitada (enabled_capabilities). Las acciones dentro del pipeline
+    siguen pasando por policy una a una via Executor (el gate de aqui
+    solo autoriza el DESPACHO, no las tools concretas).
+    """
+    decision = _policy_engine.decide(
+        tenant_id=tenant.id,
+        capability="run_pipeline",
+        resource_kind=intent.kind,
+        roles=["director"],
+    )
+
+    if decision.effect != "allow":
+        kind = (
+            "ApprovalRequired" if decision.effect == "require_approval"
+            else "ActionDenied"
+        )
+        _event_log.append(
+            Event(
+                kind=kind,
+                entity_id=intent.id,
+                payload={
+                    "action": "run_pipeline",
+                    "intent_id": intent.id,
+                    "reason": decision.reason,
+                },
+                actor_id="orchestrator",
+                tenant_id=tenant.id,
+                correlation_id=correlation_id,
+                command_id=command_id,
+            )
+        )
+        return {
+            "action": "run_pipeline",
+            "policy_effect": decision.effect,
+            "reason": decision.reason,
+            "result": None,
+            "note": f"{decision.effect}: {decision.reason}",
+        }
+
+    pipeline_id = str(intent.payload.get("pipeline_id", "")).strip()
+    params = intent.payload.get("params") or {}
+    if not isinstance(params, dict):
+        params = {}
+
+    if not pipeline_id:
+        return {
+            "action": "run_pipeline",
+            "policy_effect": "deny",
+            "reason": "payload.pipeline_id vacio",
+            "result": None,
+            "note": "run_pipeline sin pipeline_id",
+        }
+
+    # Resolver slug (el runner dispatch usa slug, no id)
+    slug = tenant.slug
+
+    from ...orchestration.pipelines.runner import (
+        PipelineRunner,
+        PipelineStepError,
+        UnknownPipelineError,
+    )
+    from ...orchestration.pipelines.validation import (
+        CatalogValidationError,
+        assert_tenant_catalog_valid,
+    )
+
+    try:
+        assert_tenant_catalog_valid(slug, _executor.registry)
+    except CatalogValidationError as exc:
+        return {
+            "action": f"pipeline:{pipeline_id}",
+            "policy_effect": "deny",
+            "reason": f"catalogo del tenant invalido: {exc}",
+            "result": None,
+            "note": "catalogo del tenant invalido",
+        }
+
+    runner = PipelineRunner(executor=_executor, llm=None, tenant_slug=slug)
+
+    try:
+        result = runner.run(
+            pipeline_id=pipeline_id,
+            tenant_id=tenant.id,
+            params=params,
+            correlation_id=correlation_id,
+            command_id=command_id,
+            tenant_slug=slug,
+        )
+    except UnknownPipelineError as exc:
+        return {
+            "action": f"pipeline:{pipeline_id}",
+            "policy_effect": "allow",
+            "reason": f"pipeline desconocido: {exc}",
+            "result": None,
+            "note": f"pipeline desconocido: {exc}",
+        }
+    except PipelineStepError as exc:
+        return {
+            "action": f"pipeline:{pipeline_id}",
+            "policy_effect": "allow",
+            "reason": f"pipeline fallo: {exc}",
+            "result": None,
+            "note": f"pipeline fallo: {exc}",
+        }
+    except Exception as exc:
+        return {
+            "action": f"pipeline:{pipeline_id}",
+            "policy_effect": "allow",
+            "reason": f"error ejecutando pipeline: {exc}",
+            "result": None,
+            "note": f"error ejecutando pipeline: {exc}",
+        }
+
+    return {
+        "action": f"pipeline:{pipeline_id}",
+        "policy_effect": "allow",
+        "reason": None,
+        "result": result,
+        "note": f"pipeline '{pipeline_id}': {result.get('status')}",
+    }
+
+
 def _execute_intent(
     intent: Intent,
     tenant_id: str,
     correlation_id: str,
     command_id: str,
 ) -> Dict[str, Any]:
+    # Branch: run_pipeline se despacha a PipelineRunner, no al Executor.
+    if intent.kind == "run_pipeline":
+        tenant = _tenant_registry.get(tenant_id)
+        if tenant is None:
+            return {
+                "action": "run_pipeline",
+                "policy_effect": "deny",
+                "reason": f"tenant {tenant_id} no registrado",
+                "result": None,
+                "note": f"tenant {tenant_id} no registrado",
+            }
+        return _execute_pipeline_intent(intent, tenant, correlation_id, command_id)
+
     action = _map_kind_to_action(intent.kind)
     if action is None:
         return {
