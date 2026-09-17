@@ -189,23 +189,8 @@ def derive_catalog(
 # Acciones internas del orquestador (no son capabilities de connector)
 # ---------------------------------------------------------------------------
 
-class _ReplyToUserParams(BaseModel):
-    """Params de la accion interna `reply_to_user`."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    message: str = Field(default="")
-
-
-_INTERNAL_ACTIONS: Dict[str, ActionSpec] = {
-    "reply_to_user": ActionSpec(
-        kind="reply_to_user",
-        providers=(),
-        params_schema=_ReplyToUserParams,
-        risk=RiskClass.READ_ONLY,
-        requires_approval=False,
-        description="Responder al usuario sin ejecutar ninguna tool.",
-    ),
-}
+# _INTERNAL_ACTIONS: se importan desde cognition/planning/internal_actions.py
+# (evita que connectors conozca conceptos de orchestration).
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +218,8 @@ def get_action_spec(kind: Optional[str]) -> Optional[ActionSpec]:
     if not kind:
         return None
     k = kind.strip().lower()
-    internal = _INTERNAL_ACTIONS.get(k)
+    from ...cognition.planning.internal_actions import INTERNAL_ACTIONS
+    internal = INTERNAL_ACTIONS.get(k)
     if internal is not None:
         return internal
     return _get_catalog().get(k)
@@ -272,7 +258,8 @@ def catalog_prompt_block() -> str:
 
     lines = ["Acciones disponibles (usa SOLO estos kind):"]
     # Internas primero.
-    for spec in _INTERNAL_ACTIONS.values():
+    from ...cognition.planning.internal_actions import INTERNAL_ACTIONS as _INT
+    for spec in _INT.values():
         fields = ", ".join(spec.params_schema.model_fields.keys())
         lines.append(f"- {spec.kind}: {spec.description}")
         if fields:
