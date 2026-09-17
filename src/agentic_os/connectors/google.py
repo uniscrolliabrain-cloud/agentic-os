@@ -1,4 +1,4 @@
-﻿"""Google Connectors â€” Conecta Gmail, Drive y Calendar reales vÃ­a adapters.
+"""Google Connectors â€” Conecta Gmail, Drive y Calendar reales vÃ­a adapters.
 
 Lee credenciales de Settings/.env (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
 GOOGLE_REFRESH_TOKEN) y expone conectores funcionales registrados en el

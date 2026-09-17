@@ -1,4 +1,4 @@
-﻿"""Suite de verificación de remediaciones de seguridad y arquitectura (13 problemas)."""
+"""Suite de verificación de remediaciones de seguridad y arquitectura (13 problemas)."""
 
 from __future__ import annotations
 

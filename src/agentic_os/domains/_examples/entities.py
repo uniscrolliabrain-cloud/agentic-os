@@ -1,4 +1,4 @@
-﻿"""Entidades de ejemplo para tests y demos — NO son kernel ni tenant."""
+"""Entidades de ejemplo para tests y demos — NO son kernel ni tenant."""
 from __future__ import annotations
 
 from datetime import datetime

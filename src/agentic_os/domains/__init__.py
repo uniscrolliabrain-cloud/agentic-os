@@ -1,4 +1,4 @@
-﻿"""Dominios: cada tenant es un DomainPack autodescubierto."""
+"""Dominios: cada tenant es un DomainPack autodescubierto."""
 from __future__ import annotations
 
 import importlib

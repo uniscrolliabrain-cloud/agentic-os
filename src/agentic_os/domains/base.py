@@ -1,4 +1,4 @@
-﻿"""Base para dominios/nicho.
+"""Base para dominios/nicho.
 
 **Regla de oro**: el kernel define qué *PUEDE* existir (``DEFAULT_VOCAB``);
 el dominio define qué *EXISTE* mediante extensiones tipadas.

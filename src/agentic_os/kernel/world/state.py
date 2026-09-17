@@ -1,4 +1,4 @@
-﻿"""Estado del mundo derivado del EventLog."""
+"""Estado del mundo derivado del EventLog."""
 from __future__ import annotations
 
 from typing import Any, Dict

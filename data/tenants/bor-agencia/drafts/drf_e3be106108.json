@@ -1,0 +1,10 @@
+{
+  "id": "drf_e3be106108",
+  "tenant_id": "bor-agencia",
+  "to": "lead@empresa.com",
+  "subject": "Re: Quiero un presupuesto para tu producto",
+  "body": "Hola,\n\nGracias por tu interes. Te respondere en breve con toda la informacion.\n\nUn saludo.",
+  "created_at": "2026-09-17T14:12:55.799833+00:00",
+  "status": "SIMULATED",
+  "real_execution": false
+}

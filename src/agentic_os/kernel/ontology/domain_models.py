@@ -1,4 +1,4 @@
-﻿"""Entidades de dominio tipadas — kernel SOLO provee la MAQUINARIA.
+"""Entidades de dominio tipadas — kernel SOLO provee la MAQUINARIA.
 
 El kernel define:
 - ``BaseDomainModel`` — base estricta (frozen, forbid, tenant_id obligatorio).

@@ -131,15 +131,34 @@ class Orchestrator:
 
         El Executor es obligatorio y se inyecta explicitamente. El orquestador
         no construye Executor interno ni ejecuta tools/connectors.
+
+        Orden de validacion (fail-closed, deterministico):
+          1. executor inyectado (nunca se construye dentro)
+          2. registry, si se inyecta, es el mismo que executor.registry
+          3. pipeline existe en el catalogo del tenant
+          4. catalogo del tenant consistente (tools referenciadas existen)
+          5. ejecutar via PipelineRunner
         """
+        # 1) Contrato: el Executor SIEMPRE es obligatorio (fail-closed)
+        if executor is None:
+            raise TypeError(
+                "handle_pipeline requiere un Executor inyectado; "
+                "no se admite construccion interna ni ejecucion directa"
+            )
+
+        # 2) Registry inyectado debe ser el mismo objeto que executor.registry
+        if registry is not None and registry is not executor.registry:
+            raise ValueError(
+                "registry inyectado debe ser el mismo objeto que executor.registry"
+            )
+
         from .pipelines.runner import (
             PipelineRunner,
-            UnknownPipelineError,
             get_tenant_pipelines,
         )
         from .pipelines.validation import assert_tenant_catalog_valid
 
-        # Resolver tenant_slug desde TenantRegistry
+        # 3) Resolver tenant_slug desde TenantRegistry (si existe)
         tenant_slug = tenant_id
         try:
             from ..infrastructure.tenancy import TenantRegistry
@@ -149,6 +168,7 @@ class Orchestrator:
         except Exception:
             pass
 
+        # 4) Resolver pipeline del catalogo del tenant
         pipelines = get_tenant_pipelines(tenant_slug)
         if pipeline_id not in pipelines:
             self.log.append(Event(
@@ -162,22 +182,11 @@ class Orchestrator:
             ))
             return {"status": "UNKNOWN_PIPELINE", "pipeline_id": pipeline_id}
 
-        if executor is None:
-            raise TypeError(
-                "handle_pipeline requiere un Executor inyectado; "
-                "no se admite construccion interna ni ejecucion directa"
-            )
-
-        if registry is not None and registry is not executor.registry:
-            raise ValueError(
-                "registry inyectado debe ser el mismo objeto que executor.registry"
-            )
-
+        # 5) Validar catalogo y ejecutar via runner
+        assert_tenant_catalog_valid(tenant_slug, executor.registry)
         runner = PipelineRunner(
             executor=executor, llm=self.llm, tenant_slug=tenant_slug
         )
-        assert_tenant_catalog_valid(tenant_slug, executor.registry)
-
         return runner.run(
             pipeline_id=pipeline_id,
             tenant_id=tenant_id,

@@ -87,6 +87,7 @@ def test_agencia_kinds_registered_and_integrity(agencia_registered) -> None:
         "agencia.deal",
         "agencia.quote",
         "agencia.audit_report",
+        "agencia.social_post",
     }
     for kind in AGENCIA_ENTITY_KINDS:
         assert kind in ENTITY_TYPE_REGISTRY
