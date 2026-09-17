@@ -18,9 +18,9 @@ def test_llm_proposer_structured_proposal():
     # se descartan fail-closed en el LLMProposer.
     mock_response = IntentProposalResponse(
         intents=[
-            Intent(goal="Verify patient history", kind="read_email", rationale="Needed before diagnosis",
+            Intent(goal="Verify patient history", kind="email.message.read", rationale="Needed before diagnosis",
                    payload={"max_results": 5}),
-            Intent(goal="Check medication compatibility", kind="list_events", rationale="Safety invariant",
+            Intent(goal="Check medication compatibility", kind="calendar.event.read", rationale="Safety invariant",
                    payload={"max_results": 3}),
         ]
     )

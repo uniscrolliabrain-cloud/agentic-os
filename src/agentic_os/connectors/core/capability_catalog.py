@@ -179,8 +179,106 @@ def derive_catalog(
     return catalog
 
 
+
+
+# ---------------------------------------------------------------------------
+# Acciones internas del orquestador (no son capabilities de connector)
+# ---------------------------------------------------------------------------
+
+class _ReplyToUserParams(BaseModel):
+    """Params de la accion interna `reply_to_user`."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    message: str = Field(default="")
+
+
+_INTERNAL_ACTIONS: Dict[str, ActionSpec] = {
+    "reply_to_user": ActionSpec(
+        kind="reply_to_user",
+        providers=(),
+        params_schema=_ReplyToUserParams,
+        risk=RiskClass.READ_ONLY,
+        requires_approval=False,
+        description="Responder al usuario sin ejecutar ninguna tool.",
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# API publica para el orquestador
+# ---------------------------------------------------------------------------
+
+# Cache del catalogo derivado (inmutable). Se puebla en el primer acceso.
+_CATALOG_CACHE: Optional[Dict[str, ActionSpec]] = None
+
+
+def _get_catalog() -> Dict[str, ActionSpec]:
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is None:
+        _CATALOG_CACHE = derive_catalog()
+    return _CATALOG_CACHE
+
+
+def get_action_spec(kind: Optional[str]) -> Optional[ActionSpec]:
+    """Devuelve el ActionSpec por kind.
+
+    Busca primero en las acciones internas del orquestador
+    (`reply_to_user`) y luego en el catalogo derivado de providers.
+    Devuelve None si el kind no existe (fail-closed).
+    """
+    if not kind:
+        return None
+    k = kind.strip().lower()
+    internal = _INTERNAL_ACTIONS.get(k)
+    if internal is not None:
+        return internal
+    return _get_catalog().get(k)
+
+
+def validate_action_params(kind: str, payload: Any) -> Optional[BaseModel]:
+    """Valida payload contra el schema del kind.
+
+    Devuelve la instancia validada o None si el kind no existe o el
+    payload no cumple el schema (fail-closed).
+    """
+    spec = get_action_spec(kind)
+    if spec is None:
+        return None
+    try:
+        return spec.params_schema.model_validate(payload or {})
+    except Exception:
+        return None
+
+
+def catalog_prompt_block() -> str:
+    """Bloque de texto para inyectar en el system prompt del LLM.
+
+    Formato compacto: kind + riesgo + approval + campos. Sin providers
+    (el LLM no debe elegir provider; lo hace el router del kernel).
+    """
+    lines = ["Acciones disponibles (usa SOLO estos kind):"]
+    # Internas primero.
+    for spec in _INTERNAL_ACTIONS.values():
+        fields = ", ".join(spec.params_schema.model_fields.keys())
+        lines.append(f"- {spec.kind}: {spec.description}")
+        if fields:
+            lines.append(f"    campos: {fields}")
+    # Derivadas de providers.
+    for kind in sorted(_get_catalog()):
+        spec = _get_catalog()[kind]
+        approval = " [REQUIERE APROBACION HUMANA]" if spec.requires_approval else ""
+        fields = ", ".join(spec.params_schema.model_fields.keys())
+        lines.append(f"- {kind}: [{spec.risk}]{approval} {spec.description}")
+        if fields:
+            lines.append(f"    campos: {fields}")
+    return "\n".join(lines)
+
+
 __all__ = [
     "ActionSpec",
     "derive_action_spec",
     "derive_catalog",
+    "get_action_spec",
+    "validate_action_params",
+    "catalog_prompt_block",
 ]
