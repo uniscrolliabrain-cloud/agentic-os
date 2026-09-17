@@ -1,1 +1,277 @@
-{"id": "bor-agencia", "name": "BOR Agency - policy de venta semiautomatica", "rules": [{"capability": "web.search", "description": "Busqueda web para prospeccion y auditoria", "effect": "allow", "id": "r1"}, {"capability": "web.page.extract", "description": "Extraccion de contenido web auditado", "effect": "allow", "id": "r2"}, {"capability": "web.seo.audit", "description": "Auditoria SEO automatica", "effect": "allow", "id": "r3"}, {"capability": "web.seo.keywords", "description": "Keywords para SEO", "effect": "allow", "id": "r4"}, {"capability": "data.lead.validate", "description": "Validacion determinista de leads", "effect": "allow", "id": "r5"}, {"capability": "crm.contact.create", "description": "Alta de contacto en el CRM del cliente final", "effect": "allow", "id": "r6"}, {"capability": "crm.contact.read", "description": "Lectura de contactos", "effect": "allow", "id": "r7"}, {"capability": "crm.deal.create", "description": "Crear oportunidad comercial", "effect": "allow", "id": "r8"}, {"capability": "crm.task.create", "description": "Tareas de seguimiento", "effect": "allow", "id": "r9"}, {"capability": "calendar.event.create", "description": "Agendar cita en el calendario del cliente final", "effect": "allow", "id": "r10"}, {"capability": "calendar.event.read", "description": "Leer huecos del calendario", "effect": "allow", "id": "r11"}, {"capability": "local.business.profile.read", "description": "Leer ficha Google Business", "effect": "allow", "id": "r12"}, {"capability": "whatsapp.message.send", "description": "Primer contacto y ofertas por WhatsApp: aprueba un humano", "effect": "require_approval", "id": "r13", "requires_roles": ["director"]}, {"capability": "whatsapp.template.send", "description": "Plantillas de nurturing: aprueba un humano", "effect": "require_approval", "id": "r14", "requires_roles": ["director"]}, {"capability": "payment.link.create", "description": "Links de cobro Stripe (FINANCIAL): siempre con aprobacion", "effect": "require_approval", "id": "r15", "requires_roles": ["director"]}, {"capability": "payment.checkout.create", "description": "Checkout Stripe (FINANCIAL): siempre con aprobacion", "effect": "require_approval", "id": "r16", "requires_roles": ["director"]}, {"capability": "social.post.publish", "description": "Publicacion social: aprueba un humano", "effect": "require_approval", "id": "r17", "requires_roles": ["director"]}, {"capability": "local.business.profile.update", "description": "Actualizar ficha Google Business: aprueba un humano", "effect": "require_approval", "id": "r18", "requires_roles": ["director"]}, {"capability": "*", "description": "Red de seguridad: resto denegado", "effect": "deny", "id": "r19"}], "version": 1}
+{
+  "id": "bor-agencia",
+  "name": "BOR Agency - policy de venta semiautomatica",
+  "rules": [
+    {
+      "capability": "web.search",
+      "description": "Busqueda web para prospeccion y auditoria",
+      "effect": "allow",
+      "id": "r1"
+    },
+    {
+      "capability": "web.page.extract",
+      "description": "Extraccion de contenido web auditado",
+      "effect": "allow",
+      "id": "r2"
+    },
+    {
+      "capability": "web.seo.audit",
+      "description": "Auditoria SEO automatica",
+      "effect": "allow",
+      "id": "r3"
+    },
+    {
+      "capability": "web.seo.keywords",
+      "description": "Keywords para SEO",
+      "effect": "allow",
+      "id": "r4"
+    },
+    {
+      "capability": "data.lead.validate",
+      "description": "Validacion determinista de leads",
+      "effect": "allow",
+      "id": "r5"
+    },
+    {
+      "capability": "crm.contact.create",
+      "description": "Alta de contacto en el CRM del cliente final",
+      "effect": "allow",
+      "id": "r6"
+    },
+    {
+      "capability": "crm.contact.read",
+      "description": "Lectura de contactos",
+      "effect": "allow",
+      "id": "r7"
+    },
+    {
+      "capability": "crm.deal.create",
+      "description": "Crear oportunidad comercial",
+      "effect": "allow",
+      "id": "r8"
+    },
+    {
+      "capability": "crm.task.create",
+      "description": "Tareas de seguimiento",
+      "effect": "allow",
+      "id": "r9"
+    },
+    {
+      "capability": "calendar.event.create",
+      "description": "Agendar cita en el calendario del cliente final",
+      "effect": "allow",
+      "id": "r10"
+    },
+    {
+      "capability": "calendar.event.read",
+      "description": "Leer huecos del calendario",
+      "effect": "allow",
+      "id": "r11"
+    },
+    {
+      "capability": "local.business.profile.read",
+      "description": "Leer ficha Google Business",
+      "effect": "allow",
+      "id": "r12"
+    },
+    {
+      "capability": "whatsapp.message.send",
+      "description": "Primer contacto y ofertas por WhatsApp: aprueba un humano",
+      "effect": "require_approval",
+      "id": "r13",
+      "requires_roles": [
+        "director"
+      ]
+    },
+    {
+      "capability": "whatsapp.template.send",
+      "description": "Plantillas de nurturing: aprueba un humano",
+      "effect": "require_approval",
+      "id": "r14",
+      "requires_roles": [
+        "director"
+      ]
+    },
+    {
+      "capability": "payment.link.create",
+      "description": "Links de cobro Stripe (FINANCIAL): siempre con aprobacion",
+      "effect": "require_approval",
+      "id": "r15",
+      "requires_roles": [
+        "director"
+      ]
+    },
+    {
+      "capability": "payment.checkout.create",
+      "description": "Checkout Stripe (FINANCIAL): siempre con aprobacion",
+      "effect": "require_approval",
+      "id": "r16",
+      "requires_roles": [
+        "director"
+      ]
+    },
+    {
+      "capability": "social.post.publish",
+      "description": "Publicacion social: aprueba un humano",
+      "effect": "require_approval",
+      "id": "r17",
+      "requires_roles": [
+        "director"
+      ]
+    },
+    {
+      "capability": "local.business.profile.update",
+      "description": "Actualizar ficha Google Business: aprueba un humano",
+      "effect": "require_approval",
+      "id": "r18",
+      "requires_roles": [
+        "director"
+      ]
+    },
+    {
+      "id": "ract0",
+      "capability": "gmail_read",
+      "effect": "allow",
+      "description": "Tool gmail_read"
+    },
+    {
+      "id": "ract1",
+      "capability": "gmail_send",
+      "effect": "require_approval",
+      "description": "'gmail_send' envia comunicacion externa -> approval humano"
+    },
+    {
+      "id": "ract2",
+      "capability": "gmail_list_unread",
+      "effect": "allow",
+      "description": "Tool gmail_list_unread"
+    },
+    {
+      "id": "ract3",
+      "capability": "gmail_create_draft",
+      "effect": "allow",
+      "description": "Tool gmail_create_draft"
+    },
+    {
+      "id": "ract4",
+      "capability": "drive_list_files",
+      "effect": "allow",
+      "description": "Tool drive_list_files"
+    },
+    {
+      "id": "ract5",
+      "capability": "drive_read_file",
+      "effect": "allow",
+      "description": "Tool drive_read_file"
+    },
+    {
+      "id": "ract6",
+      "capability": "drive_search",
+      "effect": "allow",
+      "description": "Tool drive_search"
+    },
+    {
+      "id": "ract7",
+      "capability": "calendar_create_event",
+      "effect": "allow",
+      "description": "Tool calendar_create_event"
+    },
+    {
+      "id": "ract8",
+      "capability": "calendar_list_events",
+      "effect": "allow",
+      "description": "Tool calendar_list_events"
+    },
+    {
+      "id": "ract9",
+      "capability": "web_search",
+      "effect": "allow",
+      "description": "Tool web_search"
+    },
+    {
+      "id": "ract10",
+      "capability": "web_scrape",
+      "effect": "allow",
+      "description": "Tool web_scrape"
+    },
+    {
+      "id": "ract11",
+      "capability": "documentation_create",
+      "effect": "allow",
+      "description": "Tool documentation_create"
+    },
+    {
+      "id": "ract12",
+      "capability": "documentation_search",
+      "effect": "allow",
+      "description": "Tool documentation_search"
+    },
+    {
+      "id": "ract13",
+      "capability": "meta_post_publish",
+      "effect": "allow",
+      "description": "Tool meta_post_publish"
+    },
+    {
+      "id": "rcanon0",
+      "capability": "email.message.read",
+      "effect": "allow",
+      "description": "Canonical email.message.read"
+    },
+    {
+      "id": "rcanon1",
+      "capability": "email.message.send",
+      "effect": "require_approval",
+      "description": "'email.message.send' envia comunicacion externa -> approval humano"
+    },
+    {
+      "id": "rcanon2",
+      "capability": "file.read",
+      "effect": "allow",
+      "description": "Canonical file.read"
+    },
+    {
+      "id": "rcanon3",
+      "capability": "file.create",
+      "effect": "allow",
+      "description": "Canonical file.create"
+    },
+    {
+      "id": "rcanon4",
+      "capability": "knowledge.page.create",
+      "effect": "allow",
+      "description": "Canonical knowledge.page.create"
+    },
+    {
+      "id": "rcanon5",
+      "capability": "knowledge.page.search",
+      "effect": "allow",
+      "description": "Canonical knowledge.page.search"
+    },
+    {
+      "id": "rcanon6",
+      "capability": "communication.message.send",
+      "effect": "allow",
+      "description": "Canonical communication.message.send"
+    },
+    {
+      "id": "rcanon7",
+      "capability": "communication.channel.read",
+      "effect": "allow",
+      "description": "Canonical communication.channel.read"
+    },
+    {
+      "id": "rcanon8",
+      "capability": "whatsapp.message.receive",
+      "effect": "allow",
+      "description": "Canonical whatsapp.message.receive"
+    },
+    {
+      "capability": "*",
+      "description": "Red de seguridad: resto denegado",
+      "effect": "deny",
+      "id": "r19"
+    }
+  ],
+  "version": 1
+}
