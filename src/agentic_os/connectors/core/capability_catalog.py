@@ -73,11 +73,28 @@ def _declared_capabilities(provider_spec: Dict[str, Any]) -> Iterable[tuple[str,
         yield kind, {}
 
 
+# Sufijos que mapean a EXTERNAL_COMMUNICATION por convencion. Coherente
+# con `_APPROVAL_SUFFIXES`: send/publish son comunicacion externa.
+_EXTERNAL_SUFFIXES = (".send", ".publish", ".post")
+
+
 def _risk_for(kind: str, declared: Optional[str]) -> str:
-    """Risk declarado o derivado por sufijo (fallback del kernel)."""
+    """Risk declarado o derivado por sufijo (fallback del kernel).
+
+    Orden:
+      1. Declarado explicitamente en el spec.
+      2. `risk_class_for(kind)` de `core/models.py` (mapa canonico).
+      3. Fallback local por sufijo (.send/.publish/.post -> EXTERNAL).
+      4. `LOW_RISK_WRITE` (default de `risk_class_for`).
+    """
     if declared:
         return declared
-    return risk_class_for(kind)
+    base = risk_class_for(kind)
+    if base != RiskClass.LOW_RISK_WRITE:
+        return base
+    if kind.endswith(_EXTERNAL_SUFFIXES):
+        return RiskClass.EXTERNAL_COMMUNICATION
+    return base
 
 
 def _approval_for(kind: str, declared: Optional[bool]) -> bool:
