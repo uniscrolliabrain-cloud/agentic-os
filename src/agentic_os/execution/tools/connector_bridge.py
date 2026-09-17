@@ -185,7 +185,9 @@ def build_capability_registry():
             real = _build_google_connector()
             if real is not None:
                 registry.register(real)
-                spec_caps = PROVIDER_SPECS["google"]["caps"]
+                _g = PROVIDER_SPECS["google"]
+                _g_caps = _g.get("capabilities")
+                spec_caps = list(_g_caps.keys()) if isinstance(_g_caps, dict) else list(_g.get("caps") or [])
                 extra = [c for c in spec_caps if c not in set(real.capabilities)]
                 if extra:
                     residual = factory.create("google")
