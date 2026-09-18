@@ -310,3 +310,39 @@ queda como mejora futura.
 - Suite: 540 tests pasando.
 - Pendientes: AUD-20 (deriva documental menor: VISION, ARCHITECTURE),
   AUD-22 (decision tomada: se queda versionado).
+
+
+---
+
+## Congelaciones C0.3
+
+> Estas tres decisiones se aplican durante C1-C6. Se revierten solo
+> con decision explicita en docs/DECISIONS.md.
+
+### 1. `connectors/` congelado hasta C7
+
+- `connectors/providers/*.py` NO se toca en C1-C6.
+- Los 44 providers siguen como stubs (`connected=False`).
+- `connectors/core/capability_catalog.py`: la violacion de capas
+  (import de `cognition.planning.internal_actions`) se resuelve
+  moviendo el import al llamante, sin tocar este fichero.
+
+### 2. `orchestration/temporal/` fuera de alcance
+
+- `orchestration/temporal/*` NO se toca en C1-C6.
+- El orquestador propio (`orchestrator.py` + `loops.py` +
+  `scheduler.py`) es el unico runtime hasta C7.
+- Temporal se conecta en C7 si y solo si hay necesidad operativa.
+
+### 3. `agents/` deprecated, canonico `cognition/agents/`
+
+- Canonico: `cognition/agents/` (catalog.py, schemas.py, seed.py).
+- Deprecated: `agents/` (base.py, registry.py). Se elimina en C7.
+- C4a fusiona lo poco que valga la pena antes de borrar.
+
+### Nota sobre `docs/agent-notes/`
+
+- Esta en `.gitignore:67` (git check-ignore lo confirma).
+- El intento de `git clean` da Permission denied; probablemente
+  un fichero bloqueado por el ingest tool o un reparse point roto.
+- No bloquea ningun ciclo. Se investiga al cierre de sesion.
