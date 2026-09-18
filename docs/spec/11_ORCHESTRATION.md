@@ -54,3 +54,101 @@ y despacha cada nodo al miniagente correspondiente.
 - Schemas: `07_PYDANTIC_CONTRACTS.md`
 - Estados: `05_STATE_MACHINE.md`
 - Planificación↔agentes: `19_AGENT_COMPOSITION.md`
+
+
+---
+
+# Contratos ejecutables C0.4
+
+> PENDIENTE DE REVISION HUMANA. Cierra el HUECO_SPEC de spec 11:
+> firmas, serializacion y validacion de TaskPlan.
+
+## Firma de build_task_plan
+
+```python
+def build_task_plan(
+    intent: Intent,
+    catalog: Catalog,
+) -> TaskPlan:
+    """
+    Construye un TaskPlan determinista a partir de un Intent.
+
+    Precondiciones:
+    - intent.kind resuelve a un agente del catalogo (catalog.agent).
+    - El agente declara sus microacciones y sus handoffs.
+
+    Postcondiciones:
+    - TaskPlan.nodes es un DAG valido (sin ciclos, sin deps huerfanas).
+    - Cada TaskNode.agent_id existe en catalog.
+    - El plan es frozen (inmutable).
+
+    Errores:
+    - UnknownIntentError si intent.kind no resuelve.
+    - InvalidPlanError si el DAG tiene ciclos o deps huerfanas.
+    """
+    ...
+```
+
+## Serializacion TaskPlan <-> JSON
+
+TaskPlan es frozen + extra=forbid. Serializa con:
+
+```python
+plan_json = plan.model_dump_json()           # -> str
+plan = TaskPlan.model_validate_json(plan_json)
+```
+
+En disco (para `MissionMemory`): `data/tenants/<tid>/missions/<plan_id>.json`.
+
+## Validacion estructural
+
+Al construir (TaskPlan.__init__ via field_validator en schemas.py):
+
+1. node.id unicos.
+2. Todo depends_on referencia a un node existente.
+3. Sin ciclos (topological sort debe completar).
+4. Al menos 1 node.
+
+Si falla cualquiera: ValidationError, no se construye.
+
+## Orden de ejecucion
+
+```python
+def run_plan(plan: TaskPlan, scheduler: TaskScheduler) -> MissionResult:
+    """
+    - Nodos con depends_on=[] arrancan primero (paralelo si el
+      scheduler lo permite).
+    - Nodo se despacha cuando todas sus deps estan COMPLETED.
+    - Nodo con state=NEEDS_APPROVAL pausa el plan; el scheduler
+      lo salta y espera decision humana.
+    - Si un nodo FAILED: dependientes -> BLOCKED. Plan no muere,
+      espera decision (reintentar/saltar/cancelar).
+    - Plan COMPLETED cuando todos los nodos terminales estan
+      COMPLETED o SKIPPED.
+    """
+    ...
+```
+
+## Quien puede crear un TaskPlan
+
+- Solo `build_task_plan(intent, catalog)`.
+- El LLM nunca emite TaskPlan directo (D09, D13, D14).
+- El orquestador es el unico que llama a build_task_plan.
+- Si el LLM devuelve un JSON con estructura tipo TaskPlan, se ignora.
+
+## Eventos emitidos
+
+| Evento | Cuando | Payload minimo |
+|---|---|---|
+| PlanCreated | build_task_plan exito | plan_id, mission, node_count |
+| PlanStarted | antes del primer dispatch | plan_id, started_at |
+| NodeDispatched | antes de cada ejecucion | plan_id, node_id, agent_id |
+| NodeCompleted | al terminar OK | plan_id, node_id, output_keys |
+| NodeFailed | al terminar KO | plan_id, node_id, error_state |
+| NodeStateChanged | en cada transicion | plan_id, node_id, from, to |
+| PlanPausedForApproval | nodo entra NEEDS_APPROVAL | plan_id, node_id |
+| PlanResumed | tras aprobacion | plan_id, node_id, decision |
+| PlanCompleted | todos terminales OK | plan_id, duration_ms |
+| PlanFailed | algun terminal FAILED sin recovery | plan_id, error_state |
+
+Todos llevan `tenant_id` + `correlation_id` + `command_id`.
