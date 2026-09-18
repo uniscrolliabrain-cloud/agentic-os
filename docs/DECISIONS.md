@@ -3,8 +3,8 @@
 > Cada decision tiene UNA respuesta. No hay opciones. Si algo cambia,
 > se abre una nueva Dxx y la anterior se marca SUPERSEDED.
 >
-> Estado global: PROPUESTAS. C0.6 requiere firma humana explicita
-> (C0 aprobado) antes de que C1 arranque.
+> Estado global: FIRMADAS (C0.6 aprobado, 2026-09-18).
+> (C0 aprobado 2026-09-18). C1 puede arrancar.
 >
 > Formato: RESPUESTA (la ley), LEY (donde queda escrita), CONSECUENCIA.
 
@@ -250,7 +250,7 @@ CONSECUENCIA:
 ## Como se mantiene este documento
 
 1. Cada decision tiene una entrada. No se borra. Se supersede.
-2. Al firmar C0.6, cada entrada pasa de PROPUESTA a FIRMADA con fecha.
+2. Las entradas estan FIRMADAS desde 2026-09-18 (C0.6).
 3. Si algo cambia, se abre Dxx+1 y Dxx se marca SUPERSEDED.
 4. Las decisiones nuevas van al final, no se reordenan.
 
