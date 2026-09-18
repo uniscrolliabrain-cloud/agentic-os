@@ -52,3 +52,41 @@ MICROACTIONS → PIPELINES → MINIAGENTS → ORCHESTRATOR → MISSION
 - `18_TESTING.md` — criterios: un agente nuevo no rompe el núcleo
 - `19_AGENT_COMPOSITION.md` — handoffs y composición
 - `20_CLINE_IMPLEMENTATION_PROTOCOL.md` — cómo implementarlo
+
+---
+
+## Kernel Boundary Rule (ley)
+
+> El kernel solo puede modificarse si CUMPLE LAS CINCO:
+>
+> 1. Es universal (aplica a todo dominio).
+> 2. Es necesaria para una invariante del sistema.
+> 3. No depende de ningun dominio.
+> 4. No introduce conocimiento de negocio.
+> 5. Mantiene compatibilidad con los contratos existentes.
+>
+> Toda modificacion del kernel entra en PR separado, con test propio,
+> pytest tests/kernel/ verde antes y despues, y
+> test_no_kernel_imports_domains verde.
+
+## Spec Contradiction Rule (ley)
+
+> Si dos specs se contradicen, o una spec contradice el codigo sin
+> decision cerrada, la implementacion se detiene:
+>
+> SPEC A != SPEC B
+>    |
+>    v
+> STOP
+>    |
+>    v
+> decision explicita en docs/DECISIONS.md
+>    |
+>    v
+> spec actualizada
+>    |
+>    v
+> implementacion
+>
+> Nunca el agente que escribe codigo resuelve la contradiccion
+> implicitamente.
