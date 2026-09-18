@@ -2245,3 +2245,12 @@ def compiler_tools(
         write_decision=write_decision.effect,
         tools=tools,
     )
+
+# ------------------------------------------------------ APPROVALS / MISSIONS --
+# Importados al final para que tenant_scope, _event_log y _tenant_registry
+# ya existan en el namespace de este modulo (approvals/missions los usan).
+from .approvals import router as approvals_router  # noqa: E402
+from .missions import router as missions_router    # noqa: E402
+
+app.include_router(approvals_router)
+app.include_router(missions_router)
