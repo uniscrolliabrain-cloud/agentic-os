@@ -1,4 +1,4 @@
-.PHONY: help test test-domains test-kernel lint type test-unit audit diagnose clean hygiene
+﻿.PHONY: help test test-domains test-kernel lint type test-unit audit diagnose clean hygiene
 
 help: ## Mostrar este mensaje
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -11,8 +11,8 @@ test-domains: ## Tests de dominio (incluye cleanup scripts)
 	bash scripts/cleanup_repo.sh
 	python -m pytest tests/domains/ tests/kernel/ tests/security/ -q
 
-test-kernel: ## Tests del kernel (invariantes)
-	python -m pytest tests/kernel/ tests/bugs/ -q
+test-kernel: ## Tests del kernel (invariantes) + regresiones
+	python -m pytest tests/kernel/ tests/agent-notes/bugs/ -q
 
 lint: ## Lint con ruff
 	ruff check src/ tests/

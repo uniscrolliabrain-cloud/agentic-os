@@ -1,4 +1,4 @@
-# Agentic OS - Deterministic Enterprise OS
+﻿# Agentic OS - Deterministic Enterprise OS
 
 Kernel = invariantes. LLM proposes, system disposes.
 
@@ -19,7 +19,7 @@ src/agentic_os/
   interfaces/         mcp, api, llm, events
   domains/            clinic, finance (extienden vocabulario)
   infrastructure/     persistence, config, telemetry, tenancy
-frontend/             interfaz React + Tailwind (Vite)
+uniscroll-interface/  frontend React + Tailwind (Vite, :5174)
 tests/                tests de kernel y llm
 docs/                 arquitectura, invariantes, ontología, gobernanza
 ```
@@ -39,12 +39,12 @@ API disponible en `http://localhost:8000` (docs en `/docs`).
 ### 2. Frontend (React + Tailwind)
 
 ```bash
-cd frontend
+cd uniscroll-interface
 npm install
 npm run dev
 ```
 
-Interfaz disponible en `http://localhost:5173`.
+Interfaz disponible en `http://localhost:5174` (proxy de Vite `/api` -> `:8000`).
 
 ### 3. Tests
 
@@ -121,7 +121,7 @@ Bajo `src/agentic_os/connectors/` vive el **kernel de conectores**: la frontera 
 ejecución cerrada entre los agentes y el mundo real. **Los 44 providers están
 creados pero SIN conectar** — el código nunca contiene credenciales; se inyectan
 vía `.env`/CredentialStore cuando toque. Conteo exacto del catálogo:
-**44 providers · 265 mappings provider-capability · ~187 capabilities canónicas únicas.**
+**45 providers · 286 mappings provider-capability · 203 capabilities canónicas únicas.**
 
 ```
 MiniAgente → capability canónica → Command (Pydantic)
@@ -129,7 +129,7 @@ MiniAgente → capability canónica → Command (Pydantic)
     → resultado normalizado → Pydantic validado → EventLog
 ```
 
-- **44 conectores** declarados (Google, Microsoft, OpenAI, Anthropic, Gemini,
+- **45 conectores** declarados (Google, Microsoft, OpenAI, Anthropic, Gemini,
   HubSpot, Salesforce, Pipedrive, Slack, WhatsApp, Telegram, Meta, LinkedIn,
   TikTok, WordPress, Shopify, GitHub, Vercel, Cloudflare, n8n, Notion, Stripe,
   Twilio, ElevenLabs, DocuSign, Tavily/SerpAPI/Exa/Brave, browser Playwright,

@@ -1,4 +1,4 @@
-# GOVERNANCE
+﻿# GOVERNANCE
 
 **Policy governs Capability, not the agent.**
 
@@ -38,4 +38,4 @@ Definidos en `cognition/roles/library.py`:
 ## Reglas de merge
 
 - Cambios en `kernel/`, `policy/`, `connectors/` → **revisión obligatoria**.
-- Tests de policy: `tests/bugs/test_bugNN_*.py`.
+- Tests de policy: `tests/agent-notes/bugs/test_bugNN_*.py`.

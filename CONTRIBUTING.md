@@ -1,4 +1,4 @@
-# Contribuir a Agentic OS
+﻿# Contribuir a Agentic OS
 
 Gracias por contribuir. Este proyecto tiene un kernel determinista con invariantes
 estrictas — lee `docs/INVARIANTS.md` y `docs/spec/00_SYSTEM_PRINCIPLES.md` antes
@@ -19,7 +19,7 @@ pytest                 # confirma que todo pasa antes de empezar
 1. Crea una rama desde `master`: `feature/<descripcion>`, `fix/<descripcion>` o `hotfix/<descripcion>`.
 2. Haz commits atómicos siguiendo [Conventional Commits](https://www.conventionalcommits.org/):
    `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
-3. Si corriges un bug, añade un test de regresión en `tests/bugs/test_bugNN_<descripcion>.py`,
+3. Si corriges un bug, añade un test de regresión en `tests/agent-notes/bugs/test_bugNN_<descripcion>.py`,
    siguiendo el patrón ya existente en el repo.
 4. Antes de abrir el PR:
    ```bash

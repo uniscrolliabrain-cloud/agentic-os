@@ -1,4 +1,4 @@
-# INVARIANTS
+﻿# INVARIANTS
 
 Las invariantes están **implementadas** y **testeadas** en el kernel. No son comentarios.
 
@@ -17,7 +17,7 @@ Las invariantes están **implementadas** y **testeadas** en el kernel. No son co
 ## Kernel / Policy
 
 **Ubicación**: `src/agentic_os/kernel/policy/invariants.py`, `evaluator.py`
-**Tests**: `tests/bugs/test_bug5_devallowall.py`, `tests/security/test_hardening_fase1.py`
+**Tests**: `tests/agent-notes/bugs/test_bug5_devallowall.py`, `tests/security/test_hardening_fase1.py`
 
 - `Policy immutable`             → `Policy` y `PolicyRule` son frozen.
 - `Deny by default`              → sin regla explícita, `deny`.
@@ -40,5 +40,8 @@ Las invariantes están **implementadas** y **testeadas** en el kernel. No son co
 ```bash
 pytest tests/kernel/ -q
 ```
+
+También corre `pytest tests/agent-notes/bugs/ -q` — los 20 tests de regresión
+documentan bugs reales encontrados y son parte del contrato de merge.
 
 Cualquier fallo aquí **bloquea el merge** (ver `.github/CODEOWNERS`).
