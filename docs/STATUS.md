@@ -124,3 +124,56 @@
 2. Cuando un hallazgo de docs/audits/KERNEL_INVARIANTS.md se resuelva, moverlo
    de "Deuda tecnica" a "Implementado".
 3. Nunca marcar OK sin un test que lo cubra.
+
+## Cobertura spec vs realidad
+
+> Estimacion de cuanto de cada fichero de `docs/spec/` esta implementado en
+> codigo. No es una medida exacta: refleja el grado de alineacion funcional.
+> Se revisa 1 vez por ciclo de hardening.
+
+### Vinculantes (implementados, contrato activo)
+
+| Fichero | % | Nota |
+|---|---|---|
+| `00_SYSTEM_PRINCIPLES.md` | 100% | Ley del sistema, aplicada en kernel y orquestador |
+| `07_PYDANTIC_CONTRACTS.md` | 100% | Schemas reales en cognition/agents/schemas.py |
+| `13_PERMISSIONS.md` | 95% | PolicyEngine real, AUD-12 resuelto |
+| `14_HUMAN_APPROVAL.md` | 80% | Endpoints + EventLog; falta "pausa/reanudacion de pipeline" |
+| `17_OBSERVABILITY.md` | 85% | Endpoints + EventLog; falta correlation_id end-to-end |
+
+### Aspiracionales (diseno declarado, no implementado)
+
+| Fichero | % | Nota |
+|---|---|---|
+| `01_ONTOLOGY.md` | 90% | Metamodelo implementado; falta conectar al runtime (AUD-09) |
+| `02_TAXONOMY.md` | 40% | 15 familias declaradas; 6 con catalogo completo |
+| `03_ENTITY_TYPES.md` | 60% | Tipos reales en `_examples/` + dominios reales |
+| `04_ACTION_TYPES.md` | 70% | Verbos canonicos usados en capabilities |
+| `05_STATE_MACHINE.md` | 20% | Estados narrativos; no hay `StateMachine` ejecutable |
+| `06_TOOL_TAXONOMY.md` | 70% | Tools nativas + connector bridge; faltan adapters API/MCP declarados |
+| `08_MICROACTION_CATALOG.md` | 45% | 6 familias completas; 9 esbozadas |
+| `09_PIPELINE_CATALOG.md` | 15% | Los 5 pipelines declarados NO existen; los reales son por tenant |
+| `10_AGENT_CATALOG.md` | 40% | 2 de 5 agentes implementados; ninguno se ejecuta desde el orquestador |
+| `11_ORCHESTRATION.md` | 60% | Router determinista + LLM; TaskGraph/DAG declarado, no construido |
+| `12_ERROR_HANDLING.md` | 50% | RetryEngine existe; no se aplica a microacciones/pipelines |
+| `15_MEMORY_AND_STATE.md` | 70% | 4 memorias por (tenant, agente); falta `MissionMemory` |
+| `16_VALIDATION.md` | 50% | Pydantic valida entidades; no hay validacion por paso de pipeline |
+| `18_TESTING.md` | 85% | Suite completa + agent-notes/bugs; falta cobertura por agente del catalogo |
+| `19_AGENT_COMPOSITION.md` | 30% | Modelo `handoffs` existe; no hay motor de handoff |
+| `20_CLINE_IMPLEMENTATION_PROTOCOL.md` | 80% | Protocolo aplicado; fases 3-4 pendientes (compilador) |
+
+### Promedio
+
+- **Vinculantes:** ~92%
+- **Aspiracionales:** ~55%
+- **Global ponderado:** ~70%
+
+El objetivo del ciclo E es reducir la brecha marcando cada fichero aspiracional con `status: diseno` en su cabecera, para que ningun contributor confunda spec con codigo.
+
+---
+
+## Como mantener esta seccion
+
+1. Se actualiza 1 vez por ciclo de hardening (no en cada PR).
+2. Cuando un fichero pase de aspiracional a vinculante, moverlo de tabla.
+3. Si el porcentaje cambia +/- 10 puntos, actualizar la fila.
