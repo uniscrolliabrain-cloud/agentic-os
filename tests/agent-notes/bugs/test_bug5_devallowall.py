@@ -11,8 +11,8 @@ from agentic_os.kernel.policy.evaluator import Decision
 def test_dev_allow_all_does_not_bypass_in_production():
     """Sin DEV_ALLOW_ALL (o en false), los tenants no registrados reciben deny.
 
-    DEV_ALLOW_ALL es el ÚNICO disparador del allow-all (default false). Aunque
-    ENV=dev esté activo, un tenant no registrado jamás se abre sin el flag.
+    DEV_ALLOW_ALL es el ÃšNICO disparador del allow-all (default false). Aunque
+    ENV=dev estÃ© activo, un tenant no registrado jamÃ¡s se abre sin el flag.
     """
     for value in (None, "false"):
         with patch.dict(os.environ, {"DEV_ALLOW_ALL": value} if value else {}, clear=False):
@@ -25,14 +25,14 @@ def test_dev_allow_all_does_not_bypass_in_production():
                 capability="email.message.send",
             )
             assert result.effect == "deny", \
-                f"Producción no debe abrir tenant no registrado: {result.reason}"
+                f"ProducciÃ³n no debe abrir tenant no registrado: {result.reason}"
 
 
 def test_dev_allow_all_true_permite_tenants_efimeros_dev():
-    """DEV_ALLOW_ALL=true (dev) permite tenants efímeros no registrados.
+    """DEV_ALLOW_ALL=true (dev) permite tenants efÃ­meros no registrados.
 
-    Es el modo de desarrollo/tests con tenants efímeros; NO es un vector en
-    producción porque el default es false.
+    Es el modo de desarrollo/tests con tenants efÃ­meros; NO es un vector en
+    producciÃ³n porque el default es false.
     """
     with patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False):
         engine = PolicyEngine()
@@ -49,13 +49,18 @@ def test_dev_allow_all_respects_tenant_capabilities():
         engine = PolicyEngine()
         # Incluso con DEV_ALLOW_ALL, un tenant registrado sin la capability
         # habilitada debe ser denegado (si el tenant existe)
-        # Nota: este test verifica la lógica, no el registro
+        # Nota: este test verifica la lÃ³gica, no el registro
         result = engine.decide(
             tenant_id="system",
             capability="finance.refund.create",
         )
         # system tenant sin esa capability -> deny
-        assert result.effect in ("deny", "allow")  # Depende de policy cargada
+        # AUD-13: DEV_ALLOW_ALL no suaviza el endurecimiento por riesgo.
+        # finance.refund.create es FINANCIAL: ahora devuelve require_approval
+        # (antes solo delete/publish disparaban el invariante).
+        assert result.effect in ("deny", "require_approval"), (
+            f"DEV_ALLOW_ALL no debe conceder FINANCIAL sin approval: {result.effect}"
+        )
 
 
 def test_dev_allow_all_false_denies_everything():
@@ -71,7 +76,7 @@ def test_dev_allow_all_false_denies_everything():
 
 
 def test_dev_allow_all_in_default_policy_only_dev():
-    """default_policy con allow-all solo debe activarse en DEV, nunca en producción."""
+    """default_policy con allow-all solo debe activarse en DEV, nunca en producciÃ³n."""
     from agentic_os.kernel.policy.engine import default_policy
     with patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}):
         policy = default_policy("test-tenant")

@@ -155,8 +155,8 @@ class Executor:
                 self.policy, "_has_explicit_policy", False
             ):
                 # Path legacy/tests (ConnectorBridgeTool, mocks): policy
-                # explícita inyectada se evalúa sin tenant (default-deny del
-                # evaluador gobierna la resolución).
+                # explÃ­cita inyectada se evalÃºa sin tenant (default-deny del
+                # evaluador gobierna la resoluciÃ³n).
                 return self.policy.decide(
                     tenant_id=None,
                     capability=action,
@@ -318,7 +318,7 @@ class Executor:
         if tid:
             # Aislamiento de tenant: el tenant del contexto SIEMPRE gana.
             # Un caller no puede sobreescribir tenant_id con un valor distinto
-            # del confirmado por policy/autenticación (fail-closed).
+            # del confirmado por policy/autenticaciÃ³n (fail-closed).
             supplied_tenant = params.get("tenant_id")
             if supplied_tenant is not None and supplied_tenant != tid:
                 self._audit(
@@ -382,8 +382,8 @@ class Executor:
                     command_id,
                 )
             except Exception as audit_err:
-                # Fail-closed: si la auditoría post-efecto no puede persistirse,
-                # la operación no puede declararse exitosa aunque la tool corrió.
+                # Fail-closed: si la auditorÃ­a post-efecto no puede persistirse,
+                # la operaciÃ³n no puede declararse exitosa aunque la tool corriÃ³.
                 return {
                     "success": False,
                     "error": f"audit failed: {_safe_error(audit_err)}",
@@ -421,6 +421,7 @@ class Executor:
         self,
         action,
         roles=None,
+        tenant_id=None,
     ):
 
         value = (
@@ -429,10 +430,19 @@ class Executor:
             else action
         )
 
+        # AUD-16: derivar el tenant del contexto o del parametro
+        # explicito en vez de forzarlo a "system". "system" queda como
+        # ultimo recurso para callers legacy sin contexto.
+        tid = (
+            tenant_id
+            or self._tenant_from_context(action)
+            or "system"
+        )
+
         result = self.execute(
             action=value,
             roles=roles,
-            tenant_id="system",
+            tenant_id=tid,
         )
 
         return ExecutionResult(
@@ -444,4 +454,3 @@ class Executor:
             output=result.get("output"),
             error=result.get("error"),
         )
-

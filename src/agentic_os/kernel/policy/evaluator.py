@@ -31,16 +31,29 @@ class PolicyEvaluator:
     regla explícita puede añadir más restricciones, nunca quitar esta.
     """
 
-    # Segmentos de capability que activan el invariante de aprobación humana.
-    INVARIANT_APPROVAL_SEGMENTS = frozenset({"delete", "publish"})
+    # AUD-13: segmentos de capability que activan el invariante de aprobacion
+    # humana. Antes solo {delete, publish}; ahora tambien las clases
+    # FINANCIAL y DESTRUCTIVE declaradas en README.md.
+    INVARIANT_APPROVAL_SEGMENTS = frozenset({
+        "delete", "remove", "clear", "cancel",
+        "publish", "send",
+        "refund",
+    })
+    # Prefijos que fuerzan aprobacion (FINANCIAL / DESTRUCTIVE por familia).
+    INVARIANT_APPROVAL_PREFIXES = (
+        "finance.", "payment.", "stripe.", "billing.",
+    )
 
     def __init__(self, policy):
         self.policy = policy
 
     @staticmethod
     def _requires_human_approval(capability: str) -> bool:
-        segments = {seg.lower() for seg in capability.split(".")}
-        return bool(segments & PolicyEvaluator.INVARIANT_APPROVAL_SEGMENTS)
+        cap = capability or ""
+        segments = {seg.lower() for seg in cap.split(".") if seg}
+        if segments & PolicyEvaluator.INVARIANT_APPROVAL_SEGMENTS:
+            return True
+        return cap.startswith(PolicyEvaluator.INVARIANT_APPROVAL_PREFIXES)
 
     def evaluate(self, capability: str, resource_kind: Optional[str], roles: list[str]) -> Decision:
         for rule in self.policy.rules:

@@ -104,6 +104,13 @@ class PolicyEngine:
             return None
 
     def _load_policy(self, tenant_id: str) -> Policy:
+        # AUD-03: validar el tenant_id ANTES de construir la ruta.
+        # Sin esto, tenant_id="../../etc/passwd" permite path traversal
+        # de lectura (con extensión .json forzada, pero igualmente lectura
+        # arbitraria de cualquier *.json alcanzable).
+        from ..ontology.vocabulary import is_canonical_kind
+        if not is_canonical_kind(tenant_id):
+            return default_policy(tenant_id)
         path = self._policies_dir / f"{tenant_id}.json"
         if path.exists():
             try:
