@@ -346,3 +346,32 @@ queda como mejora futura.
 - El intento de `git clean` da Permission denied; probablemente
   un fichero bloqueado por el ingest tool o un reparse point roto.
 - No bloquea ningun ciclo. Se investiga al cierre de sesion.
+
+---
+
+## Cierre de sesion 2026-09-18
+
+C0 a C6 cerrados en una sesion. Test suite: 630 passed.
+
+| Ciclo | Entregable | Commit |
+|---|---|---|
+| C0 | Reconciliacion, 2 reglas ley, AUDIT_MATRIX, DECISIONS (17), spec 08/09/10/11/19 extendidas | d2a27ab..62f0a64 |
+| C1 | 18 entity types core.*, 16 action verbs, Context (8), StateMachine (7), E2E stub | 2b14518 |
+| C2 | TaxonomyFamily (15), schema extendido (validadores taxonomy/action/pair + stub) | 2b14518 |
+| C3 | Pipeline de referencia domains/agencia verificado | a85d961 |
+| C4 | 5 agentes del catalogo spec 10 + handoffs bidireccionales | bba4323 |
+| C5 | planner.build_task_plan + kernel/world/mission_memory.py + E2E plan->memoria | 0cf1679 |
+| C6 | 3 dominios (agencia, clinic, compiler) de punta a punta | verificado sin codigo nuevo |
+
+C7 (conectores reales, Temporal, Supabase) sigue fuera de alcance, incremental.
+
+### Lo que NO esta hecho (para futuras sesiones)
+
+- C7: 44 conectores reales, Temporal, Supabase.
+- 6 microacciones PENDIENTE_EXTENDER de spec 09 (research.resolve_entity,
+  research.classify_company, sales.score_lead, crm.create_company,
+  crm.add_note, content.repurpose_content, content.generate_metadata).
+- 5 pipelines de sistema de spec 09 no implementados como catalog/.
+- D17 (contracts.execution.Action vs execution.action.Action): refactor
+  del Executor pendiente.
+- `agents/` (base + registry) deprecado pero no borrado.
