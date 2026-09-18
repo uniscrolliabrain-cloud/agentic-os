@@ -266,6 +266,24 @@ CONSECUENCIA:
   (el descriptor no lleva datos para ejecutar).
 - Cierra AUD-15 sin incoherencia.
 
+## D23 - Bloque de arranque
+
+RESPUESTA: arrancamos por bloque 0b (infra on/off scaffold), no por
+bloque 1 (Skill). Razon: sin on/off, cada bloque posterior arrastra
+decisiones de infra y hay que reabrirlas.
+
+LEY: docs/BUILD_PLAN.md apartado 6, bloque 0b.
+
+CONSECUENCIA:
+- Primer bloque a construir: 0b.
+- Antes de abrirlo, D23 queda FIRMADA.
+- Bloque 1 (Skill) arranca despues de 0b.
+- El resto de decisiones D19-D22, D24-D40 se firman al abrir su bloque.
+
+FIRMADA: 2026-09-18.
+
+---
+
 ## Como se mantiene este documento
 1. Cada decision tiene una entrada. No se borra. Se supersede.
 2. Las entradas estan FIRMADAS desde 2026-09-18 (C0.6).
