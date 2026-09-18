@@ -279,3 +279,34 @@ mismo `kind` con esquemas distintos. Entonces hay que hacer
 
 Pendientes: AUD-17, 18 (probablemente resueltos, verificar), AUD-20
 (deriva documental menor), AUD-22 (decision sobre policies versionadas).
+
+### AUD-06 — Kinds de evento no registrados en EVENT_VOCAB
+
+**Situacion:** el codigo emitia 7 kinds que no estaban declarados en
+`EVENT_VOCAB`:
+
+- `ApprovalRequired`
+- `ActionIdempotentHit`
+- `CompilerChatAnswered`
+- `ScheduledPipelineEnqueued`
+- `TemporalEnqueueFailedFallback`
+- `PipelineCompleted`
+- `InboxProcessed`
+
+**Fix:** los 7 se anaden al `EVENT_VOCAB` en
+`kernel/world/events.py`. Ahora el vocabulario refleja el trafico real
+del kernel.
+
+**Pendiente (a futuro):** el campo `kind` no se valida contra el
+vocabulario en `apply()`. Se hace validacion manual (AUD-04 cierra el
+fail-closed de CRUD). Validacion estricta de `kind` contra `EVENT_VOCAB`
+queda como mejora futura.
+
+---
+
+## Estado tras Ciclo E + cierre
+
+- AUD cerrados: **19 de 22** (16 fix + 3 decision).
+- Suite: 540 tests pasando.
+- Pendientes: AUD-20 (deriva documental menor: VISION, ARCHITECTURE),
+  AUD-22 (decision tomada: se queda versionado).

@@ -32,6 +32,13 @@ EVENT_VOCAB = Vocabulary(
         "ToolFailed",
         "ActionDenied",
         "sales.lead.created",
+        "ApprovalRequired",
+        "ActionIdempotentHit",
+        "CompilerChatAnswered",
+        "ScheduledPipelineEnqueued",
+        "TemporalEnqueueFailedFallback",
+        "PipelineCompleted",
+        "InboxProcessed",
     }
 )
 
@@ -59,7 +66,7 @@ class Event(KernelModel, Generic[T]):
     correlation_id: Optional[str] = Field(
         default=None,
         description=(
-            "ID de correlaciÃƒÂ³n de la ejecuciÃƒÂ³n. "
+            "ID de correlaciÃƒÆ’Ã‚Â³n de la ejecuciÃƒÆ’Ã‚Â³n. "
             "Permite reconstruir Mission -> Pipeline -> Action -> Tool."
         ),
     )
@@ -67,7 +74,7 @@ class Event(KernelModel, Generic[T]):
     command_id: Optional[str] = Field(
         default=None,
         description=(
-            "ID lÃƒÂ³gico de la misiÃƒÂ³n/comando que originÃƒÂ³ la ejecuciÃƒÂ³n."
+            "ID lÃƒÆ’Ã‚Â³gico de la misiÃƒÆ’Ã‚Â³n/comando que originÃƒÆ’Ã‚Â³ la ejecuciÃƒÆ’Ã‚Â³n."
         ),
     )
 
