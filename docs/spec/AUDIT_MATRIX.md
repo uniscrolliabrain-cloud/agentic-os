@@ -87,10 +87,10 @@
 
 | Spec | Concepto | Codigo actual | Ubicacion correcta | Estado |
 |---|---|---|---|---|
-| 07 | contracts.execution.Action | frozen, extra=forbid | Contract canonico (si D17) | DUPLICADO |
-| 07 | execution.action.Action | laxo, sin tenant_id | Deprecated si D17 | DUPLICADO |
-| 07 | contracts.execution.ExecutionResult | estricto | Contract canonico | OK |
-| 07 | execution.result.ExecutionResult | laxo | Deprecated si D17 | DUPLICADO |
+| 07 | contracts.execution.Action | frozen, extra=forbid | Descriptor de auditoria (D18) | OK |
+| 07 | execution.action.Action | laxo, sin tenant_id | Camino ejecucion canonico (D18) | OK |
+| 07 | contracts.execution.ExecutionResult | estricto | Descriptor (D18) | OK |
+| 07 | execution.result.ExecutionResult | laxo | En uso (execute_action deprecated) | OK |
 | 00 | Kernel no importa fuera del kernel | engine.py usa infra.tenancy | mitigado por AUD-01 | OK (mitigado) |
 | 00 | Deny by default | PolicyEvaluator correcto | kernel/policy/evaluator.py | OK |
 | 00 | Delete/Publish -> require_approval | ampliado (AUD-13) | kernel/policy/evaluator.py | OK |

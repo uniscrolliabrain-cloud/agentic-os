@@ -1,8 +1,13 @@
 """contracts.execution: contratos Pydantic estrictos para Action/Command/Result.
 
-FASE 1.2 — Tipar Command/Action.
+D18 (2026-09-18): estos modelos son DESCRIPTORES DE AUDITORIA.
+- Action / ActionParams (values: Dict[str, str]) resumen TIPOS, no valores.
+- Su destino es el EventLog, NO el Executor.
+- El camino de ejecucion canonico es
+  Executor.execute(action: str, params: dict) en execution/executor.py.
+- Ver docs/DECISIONS.md D18 y D17 (superseded).
+
 Modelos inmutables (frozen=True, extra="forbid", validate_assignment=True).
-Sin placeholders: sin Any, sin pass, sin TODO.
 """
 
 from __future__ import annotations

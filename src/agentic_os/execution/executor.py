@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import re
 from typing import Any, Dict, List, Optional
 
@@ -423,6 +425,16 @@ class Executor:
         roles=None,
         tenant_id=None,
     ):
+        """DEPRECATED D18: usar `execute(action: str, params: dict)`.
+
+        Se elimina en C7. Nadie lo llama en src/.
+        """
+        warnings.warn(
+            "Executor.execute_action() esta DEPRECATED (D18). "
+            "Usa Executor.execute(action: str, params: dict).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         value = (
             action.value

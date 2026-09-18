@@ -228,7 +228,7 @@ spec 08 incompleta) se resuelven en C0.4.
 
 ---
 
-## D17 - contracts.execution.Action vs execution.action.Action (BLOQUEANTE DE C1e)
+## D17 - [SUPERSEDED por D18] contracts.execution.Action vs execution.action.Action
 
 RESPUESTA: contracts/execution.Action es el canonico (frozen, extra=forbid,
 tenant_id obligatorio, ActionParams tipado). execution/action.Action y
@@ -247,8 +247,26 @@ CONSECUENCIA:
 
 ---
 
-## Como se mantiene este documento
+## D18 - contracts.execution.Action es descriptor de auditoria, no input ejecutable
 
+RESPUESTA: Supersede D17. La distincion real es:
+- contracts.execution.Action / ActionParams (values: Dict[str, str]):
+  DESCRIPTOR DE AUDITORIA. Resume tipos ("<str>", "<int>"), no valores.
+  Su destino es el EventLog, no el Executor.
+- execution.action.Action y Executor.execute(action: str, params: dict):
+  CAMINO DE EJECUCION CANONICO. Recibe valores reales.
+- Executor.execute_action() queda DEPRECATED (nadie lo llama en src/).
+
+LEY: contratos en contracts/execution.py + execution/executor.py.
+
+CONSECUENCIA:
+- C1e valida contra el camino real (str + params) y NO contra el descriptor.
+- execute_action() emite DeprecationWarning y se elimina en C7.
+- No se migra el Executor a aceptar Action: seria un error semantico
+  (el descriptor no lleva datos para ejecutar).
+- Cierra AUD-15 sin incoherencia.
+
+## Como se mantiene este documento
 1. Cada decision tiene una entrada. No se borra. Se supersede.
 2. Las entradas estan FIRMADAS desde 2026-09-18 (C0.6).
 3. Si algo cambia, se abre Dxx+1 y Dxx se marca SUPERSEDED.
