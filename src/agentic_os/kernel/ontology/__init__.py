@@ -12,12 +12,18 @@ from .validator import OntologyValidator, OntologyValidationError, validate_agai
 
 
 class OntologyBundle(KernelModel):
-    """Foto auditable, congelada y versionada de la ontología efectiva de un tenant.
+    """Foto auditable, congelada y versionada de la ontologÃ­a efectiva de un tenant.
 
     El kernel valida fail-closed las declaraciones del dominio
     (``validate_against_metamodel``) y produce un ``OntologyBundle``
     congelado.  Cada tenant obtiene una *foto* inmutable, nunca un dict
-    mutable, lo que permite auditoría y replay determinista.
+    mutable, lo que permite auditorÃ­a y replay determinista.
+
+    AUD-09: este bundle es un artefacto de DESIGN-TIME. Se produce
+    en bootstrap (``compile_ontology``) para validar fail-closed el
+    vocabulario del dominio. NO se consulta en runtime para restringir
+    que entidades pueden crearse: el guard real es
+    ``ENTITY_TYPE_REGISTRY``. Ver ``docs/STATUS.md``.
     """
 
     version: int = 1
@@ -29,7 +35,7 @@ class OntologyBundle(KernelModel):
 
     @property
     def vocabulary(self) -> Vocabulary:
-        """Vocabulary canónico derivado del bundle (DEFAULT_VOCAB implícito)."""
+        """Vocabulary canÃ³nico derivado del bundle (DEFAULT_VOCAB implÃ­cito)."""
         return Vocabulary(
             entities=set(self.entities),
             relations=set(self.relations),
@@ -38,7 +44,7 @@ class OntologyBundle(KernelModel):
 
     @property
     def extended_entities(self) -> Set[str]:
-        """Kinds que aportó el dominio (no estaban en DEFAULT_VOCAB)."""
+        """Kinds que aportÃ³ el dominio (no estaban en DEFAULT_VOCAB)."""
         return set(self.entities) - DEFAULT_VOCAB.entities
 
     @property
