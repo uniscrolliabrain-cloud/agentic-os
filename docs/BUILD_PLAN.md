@@ -860,7 +860,7 @@ pipeline stub, activar Temporal on y verificar el mismo pipeline.
 
 **Decisiones**: D23.
 
-**Estado**: PENDING.
+**Estado: DONE.
 
 **Commits**: (vacio)
 
