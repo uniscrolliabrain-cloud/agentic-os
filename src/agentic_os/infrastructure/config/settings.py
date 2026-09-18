@@ -20,6 +20,22 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = Field(default=None, alias="GROQ_API_KEY")
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     groq_chat_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_CHAT_MODEL")
+
+    # --- Model Router: proveedores adicionales (BUILD_PLAN bloque 0) ---
+    # Grok / xAI: OpenAI-compatible
+    xai_api_key: Optional[str] = Field(default=None, alias="XAI_API_KEY")
+    xai_model: str = Field(default="grok-2-latest", alias="XAI_MODEL")
+    xai_base_url: str = Field(default="https://api.x.ai/v1", alias="XAI_BASE_URL")
+
+    # OpenRouter: gateway a multiples modelos
+    openrouter_api_key: Optional[str] = Field(default=None, alias="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(default="google/gemini-flash-1.5", alias="OPENROUTER_MODEL")
+    openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
+
+    # Hugging Face Inference API
+    hf_api_key: Optional[str] = Field(default=None, alias="HF_API_KEY")
+    hf_model: str = Field(default="meta-llama/Llama-3.2-3B-Instruct", alias="HF_MODEL")
+    hf_base_url: str = Field(default="https://api-inference.huggingface.co", alias="HF_BASE_URL")
     
     # --- FASE 0: persistencia (multi-tenant) ---
     eventlog_impl: str = Field(default="jsonl", alias="EVENTLOG_IMPL")

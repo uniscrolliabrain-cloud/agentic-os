@@ -884,7 +884,7 @@ Cache hit en prompt identico.
 
 **Decisiones**: D22, D36.
 
-**Estado**: PENDING.
+**Estado: DONE.
 
 ### Bloque 1 - SkillSchema + biblioteca
 
