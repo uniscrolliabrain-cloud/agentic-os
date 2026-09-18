@@ -218,3 +218,32 @@ Total hasta C6: 11-12 sesiones.
 - Sub-ciclos como C2a, C2b.
 - Decisiones nuevas a docs/DECISIONS.md.
 
+---
+
+# ESTADO ACTUAL (2026-09-18)
+
+C0 a C6 cerrados (sesion 1). C7a-C7d cerrados (sesion 2). 654 tests verdes.
+
+## Completado
+
+- C0 reconciliacion + DECISIONS (D01-D18).
+- C1 tipos base (18 entity types, 16 action verbs, Context, StateMachine).
+- C2 catalogo unificado microacciones + taxonomy + schema extendido.
+- C3 pipeline de referencia agencia verificado.
+- C4 5 agentes del catalogo spec 10.
+- C5 planner + MissionMemory + E2E.
+- C6 3 dominios de punta a punta.
+- C7 prep: 7 PENDIENTE_EXTENDER resueltas.
+- C7a: observabilidad + retry + timeout + output_schema en runner.
+- C7b: TaskNode.state + Handoff + resolve_handoffs.
+- C7c: TaskScheduler + pausa approval + resume.
+- C7d: tests/agents/ por agente.
+- D18: contracts.Action = descriptor de auditoria.
+
+## Pendiente (fuera del alcance de este plan)
+
+- C7 real: activacion incremental de los 44 conectores, Temporal,
+  Supabase. Scaffolding en su sitio, runtime no.
+- 5 pipelines de sistema de spec 09 (research, sales, communication,
+  data, content) no implementados como catalog/.
+- agents/ (base+registry) deprecated, se elimina en C7.

@@ -375,3 +375,29 @@ C7 (conectores reales, Temporal, Supabase) sigue fuera de alcance, incremental.
 - D17 (contracts.execution.Action vs execution.action.Action): refactor
   del Executor pendiente.
 - `agents/` (base + registry) deprecado pero no borrado.
+
+---
+
+## Cierre 2026-09-18 segunda tanda
+
+Continua la sesion anterior. Total: 654 tests verdes.
+
+| Ciclo | Entregable | Commit |
+|---|---|---|
+| D18 | contracts.Action descriptor de auditoria; execute_action deprecated | a071885 |
+| C7 prep | 7 microacciones PENDIENTE_EXTENDER resueltas | 0c43c2a |
+| C7a | runner: MicroAction* events, retry, timeout, output_schema | 0019013 |
+| C7b | TaskNode.state, Handoff schema, resolve_handoffs | f26c017 |
+| C7c | TaskScheduler topologico con pausa approval + resume | 929cb31 |
+| C7d | tests/agents/ (5 agentes + conftest) | (este commit) |
+
+### Que queda pendiente (fuera de alcance de esta sesion)
+
+- **C7 real (conectores, Temporal, Supabase)**: scaffolding estatico, no runtime.
+  Los 44 providers siguen connected=False. Temporal no arranca. Supabase solo
+  si EVENTLOG_IMPL=supabase. Activacion incremental futura.
+- **5 pipelines de sistema de spec 09**: research/sales/communication/data/content
+  no implementados como orchestration/pipelines/catalog/. Documentados en spec 09.
+- **agents/ (base + registry)**: deprecated, no borrado. Se elimina en C7.
+- **1 warning deprecation** en test_bug18_auth_tenant_debil.py (datetime.utcnow).
+- **docs/agent-notes/**: Permission denied, pendiente investigar.
