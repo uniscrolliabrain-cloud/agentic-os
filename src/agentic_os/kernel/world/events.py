@@ -54,7 +54,7 @@ class Event(KernelModel, Generic[T]):
     correlation_id: Optional[str] = Field(
         default=None,
         description=(
-            "ID de correlación de la ejecución. "
+            "ID de correlaciÃ³n de la ejecuciÃ³n. "
             "Permite reconstruir Mission -> Pipeline -> Action -> Tool."
         ),
     )
@@ -62,7 +62,7 @@ class Event(KernelModel, Generic[T]):
     command_id: Optional[str] = Field(
         default=None,
         description=(
-            "ID lógico de la misión/comando que originó la ejecución."
+            "ID lÃ³gico de la misiÃ³n/comando que originÃ³ la ejecuciÃ³n."
         ),
     )
 
@@ -97,20 +97,30 @@ class Event(KernelModel, Generic[T]):
 
 
 class EventLog(BaseModel):
-    """
-    EventLog en memoria.
+    """EventLog en memoria (append-only).
 
-    Se utiliza principalmente en tests.
-    Producción utiliza un EventLogRepository persistente.
+    AUD-07: los eventos viven en un campo privado (_events) expuesto por
+    una property `events` que devuelve una copia read-only (tupla). Antes
+    `events` era una lista publica mutable: `log.events.clear()` evitaba
+    la validacion de append() y el lock.
+
+    Se utiliza principalmente en tests. En produccion, EventLogRepository
+    persistente (jsonl/postgres/supabase).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    events: List[Event[Any]] = Field(default_factory=list)
+    _events: List[Event[Any]] = PrivateAttr(default_factory=list)
 
     _lock: threading.RLock = PrivateAttr(
         default_factory=threading.RLock
     )
+
+    @property
+    def events(self) -> tuple:
+        """Vista read-only del log. Devuelve tupla (inmutable)."""
+        with self._lock:
+            return tuple(self._events)
 
     def append(self, event: Event[Any]) -> None:
         if not event.tenant_id:
@@ -120,13 +130,13 @@ class EventLog(BaseModel):
             )
 
         with self._lock:
-            self.events.append(event)
+            self._events.append(event)
 
     def for_tenant(self, tenant_id: str) -> List[Event[Any]]:
         with self._lock:
             return [
                 event
-                for event in self.events
+                for event in self._events
                 if event.tenant_id == tenant_id
             ]
 
@@ -135,15 +145,11 @@ class EventLog(BaseModel):
 
     def all_events(self) -> List[Event[Any]]:
         with self._lock:
-            return list(self.events)
+            return list(self._events)
 
     def list_all(self) -> List[Event[Any]]:
         return self.all_events()
 
     def __len__(self) -> int:
         with self._lock:
-            return len(self.events)
-
-
-
-
+            return len(self._events)

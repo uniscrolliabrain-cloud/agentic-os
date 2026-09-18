@@ -2,6 +2,7 @@ from __future__ import annotations
 import re
 from pydantic import BaseModel, Field, ConfigDict, field_validator, ValidationInfo
 from ..types.ids import new_id
+from .vocabulary import is_canonical_relation_kind
 from ..types.time import now_utc
 from datetime import datetime
 
@@ -20,11 +21,12 @@ class Relation(BaseModel):
     @field_validator("kind")
     @classmethod
     def _kind_canonico(cls, v: str) -> str:
-        """Slug canónico (la pertenencia al Vocabulary la valida
-        OntologyValidator)."""
-        if not v or not _KIND_RE.fullmatch(v):
+        """Slug canonico (validado por is_canonical_relation_kind del
+        vocabulary del kernel, AUD-14: una sola definicion). La pertenencia
+        al Vocabulary la valida OntologyValidator."""
+        if not v or not is_canonical_relation_kind(v):
             raise ValueError(
-                f"Relation.kind inválido: {v!r} (usar slug minúsculas: 'uses'...)"
+                f"Relation.kind invalido: {v!r} (usar slug minusculas: 'uses'...)"
             )
         return v
 
