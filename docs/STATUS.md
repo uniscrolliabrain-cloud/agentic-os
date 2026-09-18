@@ -211,3 +211,71 @@ doble path de decision) fueron resueltos por el hardening de los commits
 de RESUELTO.
 
 La seccion "Cobertura spec vs realidad" refleja el estado actual.
+
+### AUD-05 — event_type/data (camino tipado) sin productor
+
+**Situacion:** el modelo `Event` del kernel define `event_type: Optional[str]`
+y `data: Optional[T]` como camino tipado alternativo a `kind`/`payload`. En
+el codigo real **no hay ningun productor**: todos los `event_type=` de
+`src/` pertenecen a OTROS modelos (`EpisodicEvent`, `WebhookEvent`,
+`TelemetryEvent`), no al `Event` del kernel.
+
+**Consumidores:** `kernel/world/events.py:78,84,86,91` (validacion interna
+del propio campo) y `interfaces/api/missions.py:51,78` (fallback defensivo
+`e.kind or e.event_type`). Ninguno depende de que `event_type` este
+poblado.
+
+**Decision:** documentar el camino tipado como **legacy sin productor** en
+el propio `events.py`. Se conserva porque:
+1. Los tests lo ejercen (`test_worldstate_typed` usa `event.data`).
+2. Un cliente externo podria construir `Event(event_type=..., data=...)`.
+
+**Reabrir si:** se decide unificar en un solo camino de eventos. Entonces
+se eliminaria `event_type`/`data` y se migrarian los tests.
+
+### AUD-09 — OntologyBundle desconectado del runtime
+
+**Situacion:** `OntologyBundle` se produce en `validate_against_metamodel`
+y se consume en `domains/base.py::compile_ontology`. Pero `WorldState` y
+`kernel/world/applier.py` **no lo consultan**: el guard real de entidades
+es `ENTITY_TYPE_REGISTRY`.
+
+**Decision:** documentar `OntologyBundle` como artefacto de **design-time**
+(validacion fail-closed en bootstrap), no guard de runtime. Esto es
+correcto para el modelo actual: la ontologia se valida una vez al
+registrar el dominio y no se revalida por cada evento.
+
+**Reabrir si:** se quiere hacer cumplir el vocabulario del tenant en
+runtime (p.ej. un evento `entity_created` con `kind` fuera del bundle del
+tenant deberia fallar). Requiere inyectar el bundle en `WorldState` y
+`applier`, decision de diseño grande.
+
+### AUD-10 — ENTITY_TYPE_REGISTRY global del proceso
+
+**Situacion:** el registro de tipos de entidad es un `dict` a nivel de
+modulo en `kernel/ontology/domain_models.py`. No esta scoped por tenant.
+
+**Decision:** documentar como **global del proceso**. Suficiente para:
+- Deploy 1-tenant-por-proceso (aislamiento trivial).
+- Deploy multi-tenant donde los dominios registrados no colisionan
+  (agencia + compiler + clinic + finance conviven sin solaparse).
+
+**No se scop por tenant porque:**
+1. Requiere refactor de `entity_from_payload` y `apply`.
+2. Los tests actuales lo resetean con fixture (no dependen del scope).
+3. No hay caso de uso real hoy con dos tenants que usen el mismo
+   `kind` con definiciones distintas.
+
+**Reabrir si:** aparece un caso de uso donde dos tenants necesiten el
+mismo `kind` con esquemas distintos. Entonces hay que hacer
+`EntityRegistry` por tenant y cambiarlo todo.
+
+---
+
+## Estado tras Ciclo D
+
+- AUD-05, AUD-09, AUD-10: **cerrados por decision documentada**.
+- Total AUD cerrados: **17 de 22** (14 fix + 3 decision).
+
+Pendientes: AUD-17, 18 (probablemente resueltos, verificar), AUD-20
+(deriva documental menor), AUD-22 (decision sobre policies versionadas).

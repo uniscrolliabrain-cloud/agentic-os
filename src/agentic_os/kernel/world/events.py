@@ -41,6 +41,11 @@ class Event(KernelModel, Generic[T]):
     entity_id: str
     tenant_id: str = Field(description="Tenant al que pertenece el evento.")
 
+    # AUD-05: el camino tipado (event_type + data) es legacy y NO tiene
+    # productor en el kernel: todo el trafico real va por kind + payload.
+    # Se conserva por compatibilidad con tests y clientes externos que
+    # construyan Event con event_type. Ver docs/STATUS.md ("Deuda con
+    # decision tomada").
     event_type: Optional[str] = None
     data: Optional[T] = None
 
@@ -54,7 +59,7 @@ class Event(KernelModel, Generic[T]):
     correlation_id: Optional[str] = Field(
         default=None,
         description=(
-            "ID de correlaciÃ³n de la ejecuciÃ³n. "
+            "ID de correlaciÃƒÂ³n de la ejecuciÃƒÂ³n. "
             "Permite reconstruir Mission -> Pipeline -> Action -> Tool."
         ),
     )
@@ -62,7 +67,7 @@ class Event(KernelModel, Generic[T]):
     command_id: Optional[str] = Field(
         default=None,
         description=(
-            "ID lÃ³gico de la misiÃ³n/comando que originÃ³ la ejecuciÃ³n."
+            "ID lÃƒÂ³gico de la misiÃƒÂ³n/comando que originÃƒÂ³ la ejecuciÃƒÂ³n."
         ),
     )
 

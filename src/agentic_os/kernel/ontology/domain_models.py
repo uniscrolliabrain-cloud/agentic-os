@@ -1,19 +1,19 @@
-"""Entidades de dominio tipadas — kernel SOLO provee la MAQUINARIA.
+"""Entidades de dominio tipadas â€” kernel SOLO provee la MAQUINARIA.
 
 El kernel define:
-- ``BaseDomainModel`` — base estricta (frozen, forbid, tenant_id obligatorio).
-- ``register_entity_types()`` — registro EXPLÍCITO de clases de dominio.
-- ``entity_from_payload()`` — construcción fail-closed desde kind + payload.
-- ``validate_registry_integrity()`` — coherencia clave ↔ Literal kind.
+- ``BaseDomainModel`` â€” base estricta (frozen, forbid, tenant_id obligatorio).
+- ``register_entity_types()`` â€” registro EXPLÃCITO de clases de dominio.
+- ``entity_from_payload()`` â€” construcciÃ³n fail-closed desde kind + payload.
+- ``validate_registry_integrity()`` â€” coherencia clave â†” Literal kind.
 - ``UnknownEntityTypeError``.
 
-El kernel NO define entidades concretas (Lead, AgencyClient, BlogPost…).
+El kernel NO define entidades concretas (Lead, AgencyClient, BlogPostâ€¦).
 Cada dominio (``domains/<slug>/``) aporta las suyas y las registra
-explícitamente en su bootstrap (``XxxDomain.register_entities()``).
+explÃ­citamente en su bootstrap (``XxxDomain.register_entities()``).
 
-Invariante (docs/INVARIANTS.md I5): ``ENTITY_TYPE_REGISTRY`` ARRANCA VACÍO
-en import. Se puebla solo por llamada explícita a ``register_entity_types()``.
-Ningún módulo muta el registro como side-effect de import.
+Invariante (docs/INVARIANTS.md I5): ``ENTITY_TYPE_REGISTRY`` ARRANCA VACÃO
+en import. Se puebla solo por llamada explÃ­cita a ``register_entity_types()``.
+NingÃºn mÃ³dulo muta el registro como side-effect de import.
 """
 from __future__ import annotations
 
@@ -93,18 +93,24 @@ DomainEntity = BaseDomainModel
 from .entities import EntityRef  # noqa: E402
 
 
+# AUD-10: registro GLOBAL del proceso, no scoped por tenant. El aislamiento
+# por tenant se hace a nivel de datos (filesystem, policy, credenciales),
+# no de tipos. Coexisten todos los dominios registrados (agencia, compiler,
+# _examples) en el mismo proceso. Suficiente para el modelo de despliegue
+# actual (1 tenant activo por proceso, o N tenants con dominios no
+# colidentes). Ver docs/STATUS.md ("Deuda con decision tomada").
 ENTITY_TYPE_REGISTRY: dict[str, type[BaseDomainModel]] = {}
 
 
 class UnknownEntityTypeError(KeyError):
-    """Se pidió un kind no registrado en ENTITY_TYPE_REGISTRY (fail-closed)."""
+    """Se pidiÃ³ un kind no registrado en ENTITY_TYPE_REGISTRY (fail-closed)."""
 
 
 def register_entity_types(
     *classes: type[BaseDomainModel],
     registry: dict[str, type[BaseDomainModel]] | None = None,
 ) -> None:
-    """Registra clases de entidad de dominio EXPLÍCITAMENTE (bootstrap)."""
+    """Registra clases de entidad de dominio EXPLÃCITAMENTE (bootstrap)."""
     target = ENTITY_TYPE_REGISTRY if registry is None else registry
     for cls in classes:
         kind_field = cls.model_fields.get("kind")
@@ -134,7 +140,7 @@ def entity_from_payload(kind: str, data: dict[str, Any]) -> BaseDomainModel:
 
 
 def validate_registry_integrity() -> None:
-    """Coherencia clave ↔ Literal kind de cada clase."""
+    """Coherencia clave â†” Literal kind de cada clase."""
     for key, cls in ENTITY_TYPE_REGISTRY.items():
         kind_field = cls.model_fields.get("kind")
         default_kind = getattr(kind_field, "default", None) if kind_field else None
