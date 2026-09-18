@@ -70,17 +70,17 @@
 
 | Spec | Concepto | Codigo actual | Ubicacion correcta | Estado |
 |---|---|---|---|---|
-| 11 | build_task_plan(intent, catalog) | No existe | orchestration/planner.py | FALTA |
+| 11 | build_task_plan(intent, catalog) | planner.py (C5a) | orchestration/planner.py | OK |
 | 11 | task_scheduler (topologico) | No existe | orchestration/task_scheduler.py | FALTA |
 | 11 | Serializacion TaskPlan -> TaskNode[] | No definida | docs/spec/11 | HUECO_SPEC |
-| 14 | ApprovalGate pausa + reanudacion | /api/approvals existe (parcial) | orchestration/approvals.py | FALTA |
+| 14 | ApprovalGate pausa + reanudacion | approvals.py (Ciclo A) | interfaces/api/approvals.py | OK |
 
 ## Memoria
 
 | Spec | Concepto | Codigo actual | Ubicacion correcta | Estado |
 |---|---|---|---|---|
-| 15 | MissionMemory | No existe | kernel/world/mission_memory.py | FALTA |
-| 15 | EventRef, Fact | No existen | kernel/world/mission_memory.py | FALTA |
+| 15 | MissionMemory | mission_memory.py (C5b) | kernel/world/mission_memory.py | OK |
+| 15 | EventRef, Fact | mission_memory.py (C5b) | kernel/world/mission_memory.py | OK |
 | 15 | cognition/memory/ 4 memorias | CognitionStore completo | cognition/memory/ | OK |
 
 ## Kernel y contratos (higiene)
