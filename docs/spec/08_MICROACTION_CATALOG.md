@@ -1194,3 +1194,117 @@ no implementado (por tanto NO se implementa en codigo hasta C7).
 
 Total de microacciones propuestas en esta extension: ~65.
 Todas PENDIENTES DE REVISION HUMANA (C0.6).
+
+
+---
+
+# PENDIENTE_EXTENDER resueltas (C7 prep)
+
+> PENDIENTE DE REVISION HUMANA. Estas 7 microacciones cierran las
+> referencias marcadas PENDIENTE_EXTENDER en spec 09.
+
+## Familia RESEARCH
+
+### 07 RESEARCH.ResolveEntity
+- ONTOLOGY: action=Retrieve, entity=Document, taxonomy=RESEARCH
+- PURPOSE: Normalizar el nombre de una entidad (persona, empresa) antes de investigar
+- INPUT: `{raw_name: str, kind?: str}`
+- PRECONDITIONS: raw_name no vacio
+- SOP/TOOL: (funcion pura de normalizacion)
+- OUTPUT: `{canonical_name: str, aliases: list[str]}`
+- VALIDATION: canonical_name no vacio
+- ERROR_STATES: ValidationFailed
+- HANDOFF: research.research_company, research.research_person
+- TIMEOUT: 10s | RETRY: {max_retries: 0}
+- STUB: false
+
+### 08 RESEARCH.ClassifyCompany
+- ONTOLOGY: action=Classify, entity=Company, taxonomy=RESEARCH
+- PURPOSE: Clasificar una empresa por industria y tamano
+- INPUT: `{company_id: str, signals: dict}`
+- PRECONDITIONS: company_id existente
+- SOP/TOOL: (LLM con schema cerrado)
+- OUTPUT: `{industry: str, size: str, confidence: float}`
+- VALIDATION: industry y size no vacios
+- ERROR_STATES: InsufficientEvidence
+- HANDOFF: crm.create_company, sales.score_lead
+- TIMEOUT: 30s | RETRY: {max_retries: 1}
+- STUB: false
+
+## Familia SALES
+
+### 06 SALES.ScoreLead
+- ONTOLOGY: action=Analyze, entity=Person, taxonomy=SALES
+- PURPOSE: Puntuar un lead segun los criterios del SOP del tenant
+- INPUT: `{lead_id: str, criteria?: list[str]}`
+- PRECONDITIONS: lead_id existente
+- SOP/TOOL: (funcion pura sobre campos del lead)
+- OUTPUT: `{score: int, rationale: str}`
+- VALIDATION: 0 <= score <= 100
+- ERROR_STATES: ValidationFailed
+- HANDOFF: crm.create_lead, sales.generate_outreach
+- TIMEOUT: 15s | RETRY: {max_retries: 0}
+- STUB: false
+
+## Familia CRM
+
+### 04 CRM.CreateCompany
+- ONTOLOGY: action=Create, entity=Company, taxonomy=CRM
+- PURPOSE: Crear una empresa en el CRM
+- INPUT: `{name: str, domain?: str, industry?: str, size?: str}`
+- PRECONDITIONS: name no vacio; CRM autorizado por policy
+- SOP/TOOL: (pendiente connector crm.company.create)
+- OUTPUT: `{company_id: str, name: str}`
+- VALIDATION: company_id asignado
+- ERROR_STATES: CreationFailed, DuplicateEntity
+- HANDOFF: crm.create_contact, crm.create_lead
+- TIMEOUT: 30s | RETRY: {max_retries: 1}
+- STUB: true
+
+### 05 CRM.AddNote
+- ONTOLOGY: action=Create, entity=Document, taxonomy=CRM
+- PURPOSE: Anadir una nota a un contacto, empresa o deal
+- INPUT: `{target_id: str, target_kind: str, text: str}`
+- PRECONDITIONS: target_id existente; target_kind en {contact, company, deal}
+- SOP/TOOL: (pendiente connector crm.note.create)
+- OUTPUT: `{note_id: str}`
+- VALIDATION: note_id asignado
+- ERROR_STATES: CreationFailed, NotFound
+- HANDOFF: -
+- TIMEOUT: 15s | RETRY: {max_retries: 1}
+- STUB: true
+
+## Familia CONTENT
+
+### 05 CONTENT.RepurposeContent
+- ONTOLOGY: action=Transform, entity=Document, taxonomy=CONTENT
+- PURPOSE: Reutilizar un contenido en otro formato (blog -> post -> email)
+- INPUT: `{document_id: str, target_format: str, audience?: str}`
+- PRECONDITIONS: document_id existente
+- SOP/TOOL: (LLM con schema cerrado)
+- OUTPUT: `{document: Document}`
+- VALIDATION: document.content no vacio
+- ERROR_STATES: GenerationFailed
+- HANDOFF: social.create_post, communication.send_email
+- TIMEOUT: 60s | RETRY: {max_retries: 1}
+- STUB: false
+
+### 06 CONTENT.GenerateMetadata
+- ONTOLOGY: action=Create, entity=Document, taxonomy=CONTENT
+- PURPOSE: Generar metadatos SEO (title, description, keywords) para un contenido
+- INPUT: `{document_id: str, locale?: str="es"}`
+- PRECONDITIONS: document_id existente
+- SOP/TOOL: (LLM con schema cerrado)
+- OUTPUT: `{title: str, description: str, keywords: list[str]}`
+- VALIDATION: title <= 60 chars, description <= 160 chars
+- ERROR_STATES: GenerationFailed
+- HANDOFF: cms.post.create, social.create_post
+- TIMEOUT: 30s | RETRY: {max_retries: 1}
+- STUB: false
+
+## Resumen
+
+- 7 microacciones nuevas que cierran las 7 PENDIENTE_EXTENDER de spec 09.
+- De ellas, 5 tienen tool real o funcion pura (STUB: false) y 2 dependen
+  de conectores CRM (STUB: true).
+- Con estas, spec 09 puede implementarse al 100% sin inventar.

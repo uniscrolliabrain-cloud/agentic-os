@@ -123,7 +123,7 @@ OUTPUT: {campaign_id: str, assets: [Document]}
 
 | Referencia en pipeline (spec 09) | Canonico (spec 08) | Estado |
 |---|---|---|
-| research.resolve_entity | (no existe) | PENDIENTE_EXTENDER |
+| research.resolve_entity | research.resolve_entity | OK (nueva) |
 | web.search_web | web.search_web | OK |
 | web.open_url | web.open_url | OK |
 | web.extract_page | web.extract_page | OK |
@@ -131,12 +131,12 @@ OUTPUT: {campaign_id: str, assets: [Document]}
 | research.identify_people | research.research_person | REUSE |
 | research.extract_contact_data | crm.create_contact | REUSE |
 | research.verify_information | research.fact_check | REUSE |
-| research.classify_company | (no existe) | PENDIENTE_EXTENDER |
+| research.classify_company | research.classify_company | OK (nueva) |
 | research.build_research_report | research.build_research_report | OK |
 | data.normalize_data | data.normalize_data | OK |
-| sales.score_lead | (no existe) | PENDIENTE_EXTENDER |
-| crm.create_company | (no existe) | PENDIENTE_EXTENDER |
-| crm.add_note | (no existe) | PENDIENTE_EXTENDER |
+| sales.score_lead | sales.score_lead | OK (nueva) |
+| crm.create_company | crm.create_company | OK (nueva) |
+| crm.add_note | crm.add_note | OK (nueva) |
 | sales.track_response | sales.track_response | OK |
 | content.generate_brief | content.generate_brief | OK |
 | content.write_email | communication.create_email | REUSE |
@@ -147,8 +147,8 @@ OUTPUT: {campaign_id: str, assets: [Document]}
 | data.validate_data | data.validate_data | OK |
 | content.generate_outline | content.generate_outline | OK |
 | content.write_article | content.write_article | OK |
-| content.repurpose_content | (no existe) | PENDIENTE_EXTENDER |
-| content.generate_metadata | (no existe) | PENDIENTE_EXTENDER |
+| content.repurpose_content | content.repurpose_content | OK (nueva) |
+| content.generate_metadata | content.generate_metadata | OK (nueva) |
 | analytics.calculate_kpis | analytics.calculate_kpis | OK (nueva C0.4) |
 | analytics.generate_chart | analytics.generate_chart | OK (nueva C0.4) |
 | analytics.generate_report | analytics.generate_report | OK (nueva C0.4) |
@@ -158,9 +158,9 @@ OUTPUT: {campaign_id: str, assets: [Document]}
 ## Resumen
 
 - OK o REUSE: 25 referencias.
-- PENDIENTE_EXTENDER: 6 (research.resolve_entity,
-  research.classify_company, sales.score_lead, crm.create_company,
-  crm.add_note, content.repurpose_content, content.generate_metadata).
+- PENDIENTE_EXTENDER: 0. Todas resueltas en C7 prep (extension spec 08).
+
+
 
 ## Consecuencia para C3-C4
 
