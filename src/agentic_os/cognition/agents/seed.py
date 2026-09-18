@@ -142,4 +142,54 @@ def build_catalog(tool_names: Optional[Iterable[str]] = None) -> Catalog:
         catalog.add_agent(MiniAgentSchema(id="communication_agent", name="COMMUNICATION_AGENT", purpose="Redactar y enviar comunicaciones", triggers=["envía email","manda slack"], microactions=["communication.send_email","communication.send_slack","communication.send_whatsapp"], tools=["gmail_send","slack_send","whatsapp_send"], human_approval_policy={"required":True}))
     except CatalogError:
         pass
+    # C4b: 3 agentes nuevos del catalogo spec 10.
+    _agents_c4b = [
+        MiniAgentSchema(
+            id="lead_generation_agent",
+            name="LEAD_GENERATION_AGENT",
+            purpose="Convertir una audiencia objetivo en leads enriquecidos.",
+            triggers=["consigue leads", "genera leads", "prospecta"],
+            microactions=["web.search", "web.extract_page", "documentation.create", "draft.create"],
+            tools=["web_search", "web_scrape", "documentation_create", "gmail_create_draft"],
+            decision_rules=["enriquecer antes de crear", "nunca enviar sin aprobacion"],
+            sop="",
+            permission_policy={"roles": ["operator", "director"], "deny_by_default": True},
+            human_approval_policy={"required": True, "for": ["create_lead_in_crm"]},
+            observability=["MicroActionStarted", "MicroActionCompleted"],
+            handoffs=["web_research_agent", "communication_agent"],
+        ),
+        MiniAgentSchema(
+            id="data_analysis_agent",
+            name="DATA_ANALYSIS_AGENT",
+            purpose="Analizar datasets y producir informes y KPIs.",
+            triggers=["analiza", "analiza datos", "genera informe", "kpis"],
+            microactions=["file.read", "file.list", "documentation.create", "documentation.search"],
+            tools=["drive_read_file", "drive_list_files", "documentation_create"],
+            decision_rules=["validar antes de agregar", "no publicar sin aprobacion"],
+            sop="",
+            permission_policy={"roles": ["operator", "director"], "deny_by_default": True},
+            human_approval_policy={"required": False, "for": ["publish_report"]},
+            observability=["MicroActionStarted", "MicroActionCompleted"],
+            handoffs=["communication_agent"],
+        ),
+        MiniAgentSchema(
+            id="content_agent",
+            name="CONTENT_AGENT",
+            purpose="Producir contenidos multiformato a partir de un brief.",
+            triggers=["escribe", "redacta", "genera contenido", "crea post"],
+            microactions=["documentation.create", "documentation.search", "web.search", "social.post.publish"],
+            tools=["documentation_create", "documentation_search", "web_search", "meta_post_publish"],
+            decision_rules=["no inventar hechos", "publicar solo con aprobacion"],
+            sop="",
+            permission_policy={"roles": ["operator", "director"], "deny_by_default": True},
+            human_approval_policy={"required": True, "for": ["publish"]},
+            observability=["MicroActionStarted", "MicroActionCompleted"],
+            handoffs=["communication_agent"],
+        ),
+    ]
+    for _a in _agents_c4b:
+        try:
+            catalog.add_agent(_a)
+        except CatalogError:
+            pass
     return catalog
