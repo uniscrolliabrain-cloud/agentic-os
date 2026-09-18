@@ -63,7 +63,7 @@ def build_task_plan(intent: Intent, catalog: Catalog) -> TaskPlan:
             id=node_id,
             agent_id=agent_id,
             depends_on=list(deps),
-            status="pending",
+            state="PENDING",
             input={},
             output=None,
         ))

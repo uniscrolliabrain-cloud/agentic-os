@@ -13,10 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...kernel.ontology.action_types import ACTION_TYPES, is_forbidden_pair
 from ...kernel.ontology.taxonomy import is_valid_taxonomy
+from ...kernel.world.state_machine import ALL_STATES as _ALL_STATES
 
 
 from ...kernel.ontology.action_types import ACTION_TYPES, is_forbidden_pair
 from ...kernel.ontology.taxonomy import is_valid_taxonomy
+from ...kernel.world.state_machine import ALL_STATES as _ALL_STATES
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -118,6 +120,22 @@ class PipelineSchema(_Frozen):
         return v
 
 
+class Handoff(_Frozen):
+    """Handoff declarativo entre agentes (spec 19)."""
+    from_agent_id: str
+    to_agent_id: str
+    payload_ref: str = ""
+    condition: str = ""
+    description: str = ""
+
+    @field_validator("from_agent_id", "to_agent_id")
+    @classmethod
+    def _nonblank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("from_agent_id/to_agent_id obligatorio")
+        return v
+
+
 class MiniAgentSchema(_Frozen):
     id: str
     name: str
@@ -142,6 +160,7 @@ class MiniAgentSchema(_Frozen):
     human_approval_policy: Dict[str, Any] = Field(default_factory=dict)
     state_transitions: Dict[str, Any] = Field(default_factory=dict)
     handoffs: List[str] = Field(default_factory=list)
+    handoffs_spec: List[Handoff] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)
     observability: List[str] = Field(default_factory=list)
     test_cases: List[str] = Field(default_factory=list)
@@ -158,10 +177,16 @@ class TaskNode(_Frozen):
     id: str
     agent_id: str
     depends_on: List[str] = Field(default_factory=list)
-    status: str = "pending"
+    state: str = "PENDING"
     input: Dict[str, Any] = Field(default_factory=dict)
     output: Optional[Dict[str, Any]] = None
 
+    @field_validator("state")
+    @classmethod
+    def _state_valido(cls, v: str) -> str:
+        if v not in _ALL_STATES:
+            raise ValueError(f"TaskNode.state invalido: {v!r}")
+        return v
 
 class TaskPlan(_Frozen):
     id: str
