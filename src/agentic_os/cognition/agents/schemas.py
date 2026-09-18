@@ -11,13 +11,19 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ...kernel.ontology.action_types import ACTION_TYPES, is_forbidden_pair
+from ...kernel.ontology.taxonomy import is_valid_taxonomy
+
+
+from ...kernel.ontology.action_types import ACTION_TYPES, is_forbidden_pair
+from ...kernel.ontology.taxonomy import is_valid_taxonomy
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 class MicroActionSchema(_Frozen):
-    """Operación atómica con contrato cerrado (docs/spec/08)."""
+    """Operacion atomica con contrato cerrado (docs/spec/08)."""
 
     id: str
     action_type: str
@@ -33,6 +39,7 @@ class MicroActionSchema(_Frozen):
     handoff: List[str] = Field(default_factory=list)
     timeout_seconds: int = 60
     retry_policy: Dict[str, Any] = Field(default_factory=dict)
+    stub: bool = False
 
     @field_validator("id", "action_type", "entity_type", "taxonomy", "purpose", "tool")
     @classmethod
@@ -41,13 +48,34 @@ class MicroActionSchema(_Frozen):
             raise ValueError("campo obligatorio en blanco")
         return v
 
+    @field_validator("taxonomy")
+    @classmethod
+    def _taxonomy_valida(cls, v: str) -> str:
+        if not is_valid_taxonomy(v):
+            raise ValueError(f"taxonomy invalida: {v!r}")
+        return v
+
+    @field_validator("action_type")
+    @classmethod
+    def _action_type_valido(cls, v: str) -> str:
+        if v not in ACTION_TYPES:
+            raise ValueError(f"action_type invalido: {v!r}")
+        return v
+
+    @field_validator("entity_type")
+    @classmethod
+    def _pair_no_prohibido(cls, v: str, info) -> str:
+        action = info.data.get("action_type")
+        if action and is_forbidden_pair(action, v):
+            raise ValueError(f"par prohibido por defecto: ({action}, {v})")
+        return v
+
     @field_validator("timeout_seconds")
     @classmethod
     def _positive_timeout(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("timeout_seconds debe ser > 0")
         return v
-
 
 class PipelineStep(_Frozen):
     order: int

@@ -17,13 +17,13 @@
 
 | Spec | Concepto | Codigo actual | Ubicacion correcta | Estado |
 |---|---|---|---|---|
-| 03 | 18 entity types | No existen como modelos | kernel/ontology/entities_catalog.py | FALTA |
-| 03 | Namespace de entity kinds | No decidido | docs/DECISIONS.md D03 | HUECO_SPEC |
+| 03 | 18 entity types | entities_catalog.py (C1a) | kernel/ontology/entities_catalog.py | OK |
+| 03 | Namespace de entity kinds | core.* aplicado (C1a) | docs/DECISIONS.md D03 | OK |
 | 01 | EntityCategory (metamodelo) | metamodel.EntityCategory (5) | kernel/ontology/metamodel.py | OK |
 | 01 | Vocabulary.entities | vocabulary.entities (7 strings) | kernel/ontology/vocabulary.py | OK |
-| 04 | 16 action verbs | No existen como enum | kernel/ontology/action_types.py | FALTA |
-| 04 | Pares (Action, Entity) prohibidos | No definido | kernel/ontology/action_types.py | FALTA |
-| 01 | Context (8 categorias) | No existe | kernel/ontology/context.py | FALTA |
+| 04 | 16 action verbs | action_types.py (C1b) | kernel/ontology/action_types.py | OK |
+| 04 | Pares (Action, Entity) prohibidos | FORBIDDEN_ACTION_ENTITY_PAIRS (C1b) | kernel/ontology/action_types.py | OK |
+| 01 | Context (8 categorias) | context.py (C1c) | kernel/ontology/context.py | OK |
 | 01 | EntityRef | kernel/ontology/entities.py | kernel/ontology/entities.py | OK |
 | 01 | Entity[Generic[T]] | kernel/ontology/entities.py | kernel/ontology/entities.py | OK |
 
@@ -31,7 +31,7 @@
 
 | Spec | Concepto | Codigo actual | Ubicacion correcta | Estado |
 |---|---|---|---|---|
-| 05 | StateMachine (7 estados) | No existe clase explicita | kernel/world/state_machine.py | FALTA |
+| 05 | StateMachine (7 estados) | state_machine.py (C1d) | kernel/world/state_machine.py | OK |
 | 05 | TaskNode.state | TaskNode.status: str | cognition/agents/schemas.py | FALTA |
 | 05 | Evento StateTransitioned | No se emite | kernel/world/events.py | FALTA |
 | 12 | retry_policy por microaccion | No se aplica en runner | orchestration/pipelines/runner.py | FALTA |
@@ -44,7 +44,7 @@
 |---|---|---|---|---|
 | 08 | 6 familias documentadas | MicroActionSchema en seed.py (parcial) | cognition/agents/microactions/ | FALTA |
 | 08 | 9 familias vacias (DOCUMENTS, CREATIVE, ...) | No existen | docs/spec/08 + cognition/agents/microactions/ | HUECO_SPEC |
-| 02 | TaxonomyFamily (15 + futuras) | No existe enum | kernel/ontology/taxonomy.py | FALTA |
+| 02 | TaxonomyFamily (15 + futuras) | taxonomy.py (C2c) | kernel/ontology/taxonomy.py | OK |
 | 08 | Microacciones de negocio como stub | No definidas | cognition/agents/microactions/ | HUECO_SPEC |
 | 09 | 5 pipelines de sistema | No existen | orchestration/pipelines/catalog/ | FALTA |
 | 09 | Referencias rotas a microacciones inexistentes | research.extract_company_data, sales.score_lead, ... | docs/spec/09 | CONTRADICCION |

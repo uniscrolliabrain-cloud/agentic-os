@@ -101,7 +101,10 @@ def _tool_to_microaction(tool_name: str) -> str:
     return _MAP.get(tool_name, f"tool.{tool_name}")
 
 def _pipeline_schema_from_id(pipeline_id: str, purpose: str, input_schema=None, output_schema=None) -> PipelineSchema:
-    from ...orchestration.pipelines import PIPELINE_TOOLS
+    try:
+        from ...orchestration.pipelines import PIPELINE_TOOLS
+    except ImportError:
+        PIPELINE_TOOLS = {}
     tools = PIPELINE_TOOLS.get(pipeline_id, [])
     steps = [PipelineStep(order=i, microaction_id=_tool_to_microaction(t)) for i, t in enumerate(tools)]
     return PipelineSchema(id=pipeline_id, name=pipeline_id, purpose=purpose, steps=steps, input_schema=input_schema or {}, output_schema=output_schema or {})
@@ -117,7 +120,10 @@ def build_catalog(tool_names: Optional[Iterable[str]] = None) -> Catalog:
             catalog.add_microaction(MicroActionSchema(**spec))
         except CatalogError:
             pass
-    from ...orchestration.pipelines import PIPELINE_TOOLS
+    try:
+        from ...orchestration.pipelines import PIPELINE_TOOLS
+    except ImportError:
+        PIPELINE_TOOLS = {}
     _purpose = {"daily_social": "Contenido social diario", "inbox_watcher": "Clasifica unread y deja borradores", "leads_to_draft": "Convierte leads en borradores"}
     for pid in PIPELINE_TOOLS:
         p = _pipeline_schema_from_id(pid, purpose=_purpose.get(pid, pid))
