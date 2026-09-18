@@ -1,5 +1,9 @@
 # 04 — Tipos de acción (ACTION)
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Las acciones son la dimensión verbal del metamodelo. No se ejecutan "sueltas":
 cada acción se realiza mediante una **microacción** concreta (`08_MICROACTION_CATALOG.md`).
 

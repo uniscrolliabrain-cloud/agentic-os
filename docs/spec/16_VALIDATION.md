@@ -1,5 +1,9 @@
 # 16 — Validación y QA
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Cada microacción valida su **output contra su output_schema** antes de permitir
 que el dato avance al siguiente paso o al resultado final.
 

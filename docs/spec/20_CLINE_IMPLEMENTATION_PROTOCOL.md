@@ -1,5 +1,9 @@
 # 20 — Protocolo de implementación (para Cline)
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Cómo implementar este sistema en el repositorio **sin romper la ley** ni inventar nada.
 
 ## 1. Postura

@@ -1,5 +1,9 @@
 # 18 — Testing
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Criterio: **añadir un agente nuevo NO puede romper el núcleo** (`kernel/`) ni
 otros agentes. Cada PR a un agente exige sus test.
 

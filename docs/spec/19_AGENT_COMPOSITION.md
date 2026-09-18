@@ -1,5 +1,9 @@
 # 19 — Composición de agentes
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Cómo los miniagentes se conectan para resolver misiones complejas. La composición es **explícita** (declarada), nunca inferida.
 
 ## Regla de oro

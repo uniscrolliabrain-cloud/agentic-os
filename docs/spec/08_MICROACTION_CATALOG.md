@@ -1,5 +1,9 @@
 # 08 — Catálogo de microacciones
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 > **EL CORAZÓN DEL SISTEMA.** Cada microacción es una operación atómica con
 > contrato cerrado. Todo pipeline y todo miniagente se construye combinando
 > estas microacciones. Las primeras familias (WEB, RESEARCH, DATA,

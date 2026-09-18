@@ -1,5 +1,9 @@
 # 09 — Catálogo de pipelines
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Pipeline = secuencia **explícita y ordenada** de microacciones. Nada se ejecuta
 fuera de un pipeline definido aquí (o en la librería de skills `cognition/skills/`).
 

@@ -1,5 +1,9 @@
 # 01 — Ontología (metamodelo)
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Define el vocabulario estructural del mundo digital. Todo dato que el sistema
 maneja es una instancia de uno de estos cuatro dominios: **ENTIDAD**, **ACCIÓN**,
 **CONTEXTO** o **ESTADO**. Este metamodelo vive en `kernel/ontology/`.

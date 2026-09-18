@@ -1,5 +1,9 @@
 # 02 — Taxonomía de capacidades digitales
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Familia = agrupación taxonómica de capacidades. Cada familia contiene microacciones
 cuyos contratos se definen en `08_MICROACTION_CATALOG.md`.
 

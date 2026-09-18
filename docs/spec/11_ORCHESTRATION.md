@@ -1,5 +1,9 @@
 # 11 — Orquestación
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Capa que convierte la **intención humana** en un **plan ejecutable** (TaskGraph/DAG)
 y despacha cada nodo al miniagente correspondiente.
 

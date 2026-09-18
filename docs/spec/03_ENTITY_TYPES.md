@@ -1,5 +1,9 @@
 # 03 — Tipos de entidad (ENTITY)
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Cada tipo de entidad es un `BaseModel` pydantic (frozen) en `kernel/ontology/entities.py`.
 Los campos listados son el mínimo contractual; se pueden añadir campos opcionales
 con `Optional[...]` o `Field(default_factory=...)`, nunca quitar.

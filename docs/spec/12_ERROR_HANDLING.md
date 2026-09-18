@@ -1,5 +1,9 @@
 # 12 — Manejo de errores
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Define cómo se comporta el sistema cuando una microacción/pipeline/agente falla.
 
 ## Failure states (del catálogo)

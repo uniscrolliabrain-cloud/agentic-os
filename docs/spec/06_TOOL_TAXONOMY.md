@@ -1,5 +1,9 @@
 # 06 — Taxonomía de herramientas (TOOL_TAXONOMY)
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Herramienta = adaptador concreto que ejecuta una operación sobre un recurso.
 Cada herramienta es un `Tool` pydantic gobernado por policy. Las tool NO piensan:
 ejecutan. Todo el conocimiento operativo vive en las microacciones/pipelines.

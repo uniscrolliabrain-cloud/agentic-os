@@ -1,5 +1,9 @@
 # 15 — Estado y memoria
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Cómo el sistema recuerda el estado de cada misión y usa el historial.
 
 ## Fuente de verdad

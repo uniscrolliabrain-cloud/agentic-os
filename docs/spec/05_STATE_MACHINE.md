@@ -1,5 +1,9 @@
 # 05 — Máquina de estados
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Estado = en qué momento del ciclo de vida está una entidad, misión o tarea.
 El estado es un tipo del metamodelo (ver `01_ONTOLOGY.md`).
 

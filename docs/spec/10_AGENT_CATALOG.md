@@ -1,5 +1,9 @@
 # 10 — Catálogo de miniagentes
 
+> **status:** diseno (aspiracional). Este fichero describe un diseno
+> objetivo; no todas sus partes estan implementadas. Ver `docs/STATUS.md`.
+
+
 Miniagente = **módulo operativo cerrado** que cumple la plantilla obligatoria
 (`AGENT_SPECIFICATION_TEMPLATE.md`). No es una IA genérica: tiene contrato,
 microacciones, tools aisladas, políticas y handoffs. Cline NO puede crear un
