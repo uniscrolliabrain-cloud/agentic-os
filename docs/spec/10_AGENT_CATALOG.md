@@ -82,7 +82,7 @@ INPUT:
 LeadRequest {segment: str, geographies: [str], value_prop: str, limit?: int}
 
 PIPELINE:
-01 RESEARCH_AGENT.handoff → ResearchResult
+01 WEB_RESEARCH_AGENT.handoff → ResearchResult
 02 EnrichProspect
 03 NormalizeData
 04 ScoreLead

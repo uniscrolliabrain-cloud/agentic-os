@@ -105,3 +105,68 @@ OUTPUT: {campaign_id: str, assets: [Document]}
    un LLM (con schema de salida cerrado). El resto es 100% determinista.
 4. Ramificaciones solo vía `if_else` declarado en el `PipelineStep` (nunca "lógica libre").
 5. Si un paso falla, se aplica `error_recovery` del pipeline o el estado pasa a `FAILED`/`BLOCKED` (ver `12_ERROR_HANDLING.md`).
+
+
+---
+
+# Correcciones C0.4 - Referencias normalizadas
+
+> PENDIENTE DE REVISION HUMANA. Resuelve referencias rotas entre spec 09
+> y spec 08 (marcadas como CONTRADICCION en AUDIT_MATRIX.md). No sustituye
+> los pasos originales: solo declara el nombre canonico de cada uno.
+>
+> Estados:
+> - OK: la microaccion existe en spec 08 con ese nombre.
+> - REUSE: el paso se resuelve con otra microaccion de spec 08.
+> - PENDIENTE_EXTENDER: no existe en spec 08. Se extendera en una
+>   iteracion futura con aprobacion humana antes de implementarla.
+
+| Referencia en pipeline (spec 09) | Canonico (spec 08) | Estado |
+|---|---|---|
+| research.resolve_entity | (no existe) | PENDIENTE_EXTENDER |
+| web.search_web | web.search_web | OK |
+| web.open_url | web.open_url | OK |
+| web.extract_page | web.extract_page | OK |
+| research.extract_company_data | research.research_company | REUSE |
+| research.identify_people | research.research_person | REUSE |
+| research.extract_contact_data | crm.create_contact | REUSE |
+| research.verify_information | research.fact_check | REUSE |
+| research.classify_company | (no existe) | PENDIENTE_EXTENDER |
+| research.build_research_report | research.build_research_report | OK |
+| data.normalize_data | data.normalize_data | OK |
+| sales.score_lead | (no existe) | PENDIENTE_EXTENDER |
+| crm.create_company | (no existe) | PENDIENTE_EXTENDER |
+| crm.add_note | (no existe) | PENDIENTE_EXTENDER |
+| sales.track_response | sales.track_response | OK |
+| content.generate_brief | content.generate_brief | OK |
+| content.write_email | communication.create_email | REUSE |
+| communication.send_email | communication.send_email | OK |
+| data.deduplicate | data.clean_data (parcial) | REUSE |
+| data.extract_data | data.extract_data | OK |
+| data.clean_data | data.clean_data | OK |
+| data.validate_data | data.validate_data | OK |
+| content.generate_outline | content.generate_outline | OK |
+| content.write_article | content.write_article | OK |
+| content.repurpose_content | (no existe) | PENDIENTE_EXTENDER |
+| content.generate_metadata | (no existe) | PENDIENTE_EXTENDER |
+| analytics.calculate_kpis | analytics.calculate_kpis | OK (nueva C0.4) |
+| analytics.generate_chart | analytics.generate_chart | OK (nueva C0.4) |
+| analytics.generate_report | analytics.generate_report | OK (nueva C0.4) |
+| social.create_post | social.create_post | OK (nueva C0.4) |
+| social.schedule_post | social.schedule_post | OK (nueva C0.4) |
+
+## Resumen
+
+- OK o REUSE: 25 referencias.
+- PENDIENTE_EXTENDER: 6 (research.resolve_entity,
+  research.classify_company, sales.score_lead, crm.create_company,
+  crm.add_note, content.repurpose_content, content.generate_metadata).
+
+## Consecuencia para C3-C4
+
+- Los pipelines de spec 09 podran ejecutarse sobre microacciones
+  existentes (OK + REUSE) en C3.
+- Los PENDIENTE_EXTENDER se documentan antes de implementar el pipeline
+  correspondiente (extension spec 08 + aprobacion).
+- C3 (pipeline de referencia de agencia) solo usara microacciones OK
+  o REUSE, nunca PENDIENTE_EXTENDER.
