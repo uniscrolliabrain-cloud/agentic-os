@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from agentic_os.kernel.world.state import WorldState
 from agentic_os.kernel.world.applier import apply, InvalidEntityEventError
 from agentic_os.kernel.world.events import Event, EventLog
-from agentic_os.kernel.ontology.domain_models import Lead, Proposal
+from agentic_os.domains._examples import Lead, Proposal, register_demo_entities
 
 
 def _lead_payload(entity_id: str = "person_1") -> dict:
@@ -53,8 +53,11 @@ def test_worldstate_entities_are_typed_union():
     """La anotacion de entities ya no es Dict[str, Any]."""
     annotation = WorldState.model_fields["entities"].annotation
     type_str = str(annotation)
-    assert "Lead" in type_str and "typing.Any" not in type_str, (
-        f"WorldState.entities debe ser Union de entidades tipadas, no {type_str}"
+    assert "typing.Any" not in type_str, (
+        f"WorldState.entities no debe ser Dict[str, Any], es: {type_str}"
+    )
+    assert "BaseDomainModel" in type_str, (
+        f"WorldState.entities debe usar la base tipada del kernel, es: {type_str}"
     )
 
 
@@ -137,3 +140,8 @@ def test_apply_updates_entity_typed():
     state2 = apply(state, updated)
     assert state2.entities["l1"].status == "qualified"
     assert state2.version == 2
+
+@pytest.fixture(autouse=True)
+def _demo_entities_registered():
+    register_demo_entities()
+    yield

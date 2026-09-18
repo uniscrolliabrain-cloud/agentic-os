@@ -5,7 +5,7 @@ from pathlib import Path
 
 def test_pyproject_has_test_dependencies():
     """pyproject.toml debe declarar dependencias de test (pytest, httpx, pytest-asyncio)."""
-    pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
     content = pyproject.read_text()
 
     # pytest debe estar en dev dependencies
@@ -18,14 +18,14 @@ def test_pyproject_has_test_dependencies():
 
 def test_pyproject_has_fastapi():
     """fastapi debe estar como dependencia (necesario para la API)."""
-    pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
     content = pyproject.read_text()
     assert "fastapi" in content, "fastapi no está en pyproject.toml"
 
 
 def test_pyproject_anyio_marker():
     """pytest-asyncio debe tener el marker anyio configurado."""
-    pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
     content = pyproject.read_text()
     # Debe haber configuración de asyncio_mode
     assert "asyncio_mode" in content or "pytest-asyncio" in content, \

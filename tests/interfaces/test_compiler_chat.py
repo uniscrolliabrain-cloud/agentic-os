@@ -1,4 +1,4 @@
-"""Tests del chat del compilador (FASE 2 — PLAN_CLINE_AGENTE_COMPILADOR.md).
+"""Tests del chat del compilador (FASE 2 â€” PLAN_CLINE_AGENTE_COMPILADOR.md).
 
 Verifican el contrato del modo PLAN: el compilador propone un blueprint y pide
 el Gate 1, pero **nunca escribe**. El proveedor LLM se fuerza a offline para que
@@ -29,6 +29,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _api_key(slug: str) -> str:
+    # Reset singleton: otros tests (test_bug19) lo dejan apuntando
+    # a un registry temporal ya desaparecido. Aqui forzamos uno
+    # fresco que lee del registry.json real del repo.
+    TenantRegistry._SHARED_INSTANCE = None
     tenant = TenantRegistry().get(slug)
     assert tenant is not None, f"el tenant {slug} debe existir en registry.json"
     return tenant.config.credentials["api_key"]
@@ -86,7 +90,7 @@ def test_no_genera_intents_de_escritura(
     assert "Nada se ha escrito" in body["reply"]
     # El blueprint sigue siendo una propuesta: nada se ha aplicado.
     assert body["blueprint"]["status"] == "proposed"
-    # Y en el data_dir del tenant solo existe el chat (cero escrituras de código).
+    # Y en el data_dir del tenant solo existe el chat (cero escrituras de cÃ³digo).
     assert sorted(p.name for p in (_offline / COMPILER).iterdir()) == ["chat"]
 
 
@@ -173,7 +177,7 @@ def test_policy_denegada_corta_el_chat(
 
 
 class _FakeLLM:
-    """Provider de prueba: devuelve un blueprint válido en JSON."""
+    """Provider de prueba: devuelve un blueprint vÃ¡lido en JSON."""
 
     def generate(self, prompt: str, system_instruction=None) -> str:
         assert system_instruction  # la persona del compilador siempre se inyecta

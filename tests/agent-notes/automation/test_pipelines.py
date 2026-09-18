@@ -49,7 +49,7 @@ def runner(monkeypatch, tmp_path: Path):
         registry=reg,
         event_log=log,
     )
-    return PipelineRunner(executor=executor, llm=None)
+    return PipelineRunner(executor=executor, llm=None, tenant_slug="bor-agencia")
 
 
 def _seed_drive(tmp_path: Path) -> None:

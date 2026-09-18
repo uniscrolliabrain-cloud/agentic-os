@@ -1,3 +1,16 @@
+"""Aplicacion de eventos sobre el WorldState.
+
+AUD-04: en la version anterior, `entity_deleted` y cualquier `kind` con errata
+caian al return final incrementando `version` sin aplicar cambio alguno —
+perdida silenciosa de eventos. Ahora:
+
+- `entity_deleted` se maneja explicitamente.
+- Cualquier `kind` que empiece por `entity_` o `relation_` y NO este manejado
+  lanza `InvalidEntityEventError` (fail-closed).
+- Los `kind` de accion (IntentProposed, ActionStarted, ToolCompleted, ...) y
+  los `kind` libres (tests, dominios) son no-op legitimos: se registran en el
+  log pero no modifican el WorldState.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -11,6 +24,9 @@ class InvalidEntityEventError(ValueError):
     """Evento de entidad invalido (fail-closed, nunca se ignora en silencio)."""
 
 
+_CRUD_PREFIXES = ("entity_", "relation_")
+
+
 def apply(state: WorldState, event: Event[Any]) -> WorldState:
     """Aplica un evento al WorldState (funcion pura).
 
@@ -21,6 +37,7 @@ def apply(state: WorldState, event: Event[Any]) -> WorldState:
     """
     new_entities = dict(state.entities)
     new_relations = dict(state.relations)
+
     if event.kind == "entity_created":
         if event.data is not None:
             entity = event.data
@@ -48,6 +65,7 @@ def apply(state: WorldState, event: Event[Any]) -> WorldState:
                 f"entity_id del evento '{event.entity_id}'"
             )
         new_entities[event.entity_id] = entity
+
     elif event.kind == "entity_updated":
         existing = new_entities.get(event.entity_id)
         if existing is None:
@@ -67,10 +85,35 @@ def apply(state: WorldState, event: Event[Any]) -> WorldState:
                 f"entity_id del evento '{event.entity_id}'"
             )
         new_entities[event.entity_id] = updated
+
+    elif event.kind == "entity_deleted":
+        # AUD-04: antes era un no-op silencioso con version+1.
+        if event.entity_id not in new_entities:
+            raise InvalidEntityEventError(
+                f"entity_deleted sobre entidad inexistente "
+                f"'{event.entity_id}' (fail-closed)"
+            )
+        del new_entities[event.entity_id]
+
     elif event.kind == "relation_created":
         new_relations[event.entity_id] = event.payload or {}
+
     elif event.kind == "relation_deleted":
         new_relations.pop(event.entity_id, None)
+
+    else:
+        # AUD-04: cualquier kind que parezca CRUD y no este manejado es un
+        # fallo observable. Los kind de accion y los libres (tests, dominios)
+        # son no-op legitimos: se registran en el log pero no mutan el estado.
+        k = event.kind or ""
+        if k.startswith(_CRUD_PREFIXES):
+            raise InvalidEntityEventError(
+                f"kind '{k}' parece CRUD pero no esta manejado; "
+                f"entity_id={event.entity_id}. Anade una rama explicita en apply()."
+            )
+
     return WorldState(
-        entities=new_entities, relations=new_relations, version=state.version + 1
+        entities=new_entities,
+        relations=new_relations,
+        version=state.version + 1,
     )

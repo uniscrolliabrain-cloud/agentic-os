@@ -1,8 +1,8 @@
 """Hardening FASE 4: tenant scoping real (lecturas aisladas por cabecera).
 
-Criterio de aceptación: una petición con X-Tenant-Id: A nunca puede leer
+Criterio de aceptaciÃ³n: una peticiÃ³n con X-Tenant-Id: A nunca puede leer
 eventos ni conversaciones de tenant B, aunque conozca el conversation_id.
-Además: tenant desconocido -> 404; tenant con api_key exige X-Api-Key -> 401.
+AdemÃ¡s: tenant desconocido -> 404; tenant con api_key exige X-Api-Key -> 401.
 """
 
 import uuid
@@ -47,6 +47,10 @@ def client(monkeypatch, tmp_path):
     tb = _make_tenant("tenant-b", credentials={"api_key": "k-b-456"})
     tc = _make_tenant("tenant-sec", credentials={"api_key": "k-secure-123"})
     reg = rest_mod._tenant_registry
+    # Congelar _maybe_reload: otro test puede haber escrito en el
+    # registry.json real del repo; sin esto, _maybe_reload recarga
+    # desde disco y pisa los tenants inyectados en memoria.
+    monkeypatch.setattr(reg, "_maybe_reload", lambda: None)
     for t in (ta, tb, tc):
         reg._tenants[t.id] = t
         reg._slug_index[t.slug] = t.id
@@ -80,7 +84,7 @@ def test_tenant_a_nunca_lee_eventos_de_tenant_b(client):
     body = r.text
     assert "dato-de-B" not in body
     assert "SecretoInterno" not in body
-    # el propio tenant A sí ve lo suyo
+    # el propio tenant A sÃ­ ve lo suyo
     ev_a = Event(kind="DeA", entity_id="ent-a", payload={"x": "1"}, actor_id="t", tenant_id=client["a"].id)
     client["log"].append(ev_a)
     r2 = c.get("/api/v1/events", headers=_header(client["a"].id, "k-a-123"))
@@ -89,12 +93,12 @@ def test_tenant_a_nunca_lee_eventos_de_tenant_b(client):
 
 def test_tenant_a_nunca_lee_conversacion_de_tenant_b(client):
     c = client["client"]
-    # B crea su conversación
+    # B crea su conversaciÃ³n
     r = c.post("/api/v1/conversations", headers=_header(client["b"].id, "k-b-456"))
     assert r.status_code == 201
     conv_b = r.json()
 
-    # A conoce el conversation_id de B y aun así no puede leerla
+    # A conoce el conversation_id de B y aun asÃ­ no puede leerla
     r_get = c.get(f"/api/v1/conversations/{conv_b['id']}", headers=_header(client["a"].id, "k-a-123"))
     assert r_get.status_code == 404
     # ni borrarla
@@ -104,7 +108,7 @@ def test_tenant_a_nunca_lee_conversacion_de_tenant_b(client):
     r_list = c.get("/api/v1/conversations", headers=_header(client["a"].id, "k-a-123"))
     assert r_list.status_code == 200
     assert all(item["id"] != conv_b["id"] for item in r_list.json())
-    # el dueño sí la ve
+    # el dueÃ±o sÃ­ la ve
     r_owner = c.get(f"/api/v1/conversations/{conv_b['id']}", headers=_header(client["b"].id, "k-b-456"))
     assert r_owner.status_code == 200
     assert r_owner.json()["tenant_id"] == client["b"].id

@@ -1,4 +1,4 @@
-﻿# STATUS — Estado real del proyecto
+# STATUS — Estado real del proyecto
 
 > Fuente de verdad operativa: qué promete la spec y qué está implementado HOY.
 > Se actualiza en cada PR que toque `kernel/`, `connectors/`, `orchestration/`
@@ -25,15 +25,15 @@
 |---|---|---|---|
 | Event inmutable | INVARIANTS.md:10 | OK | KernelModel frozen |
 | EventLog append-only | INVARIANTS.md:11 | PARCIAL | `events` es lista publica mutable (AUD-07) |
-| WorldState derivable por replay | INVARIANTS.md:12 | PARCIAL | Solo los 4 kind reconocidos (AUD-04) |
+| WorldState derivable por replay | INVARIANTS.md:12 | OK | Todos los kinds manejados o no-op explicito (AUD-04 resuelto) |
 | apply() puro | INVARIANTS.md:13 | OK | |
-| CorruptEventError (fail-closed) | INVARIANTS.md:15 | PARCIAL | AUD-04 |
+| CorruptEventError (fail-closed) | INVARIANTS.md:15 | OK | AUD-04 resuelto |
 | Policy inmutable | INVARIANTS.md:22 | OK | |
-| Deny by default | INVARIANTS.md:23 | PARCIAL | DEV_ALLOW_ALL corta antes del evaluador (AUD-11) |
-| Engine pure | INVARIANTS.md:25 | NO | I/O de disco + CWD-dependiente (AUD-02) |
-| Delete/Publish -> approval | INVARIANTS.md:26 | PARCIAL | AUD-11 |
+| Deny by default | INVARIANTS.md:23 | OK | AUD-11 resuelto |
+| Engine pure | INVARIANTS.md:25 | OK | AUD-02 resuelto (policies_dir inyectable) |
+| Delete/Publish -> approval | INVARIANTS.md:26 | OK | AUD-11 resuelto (DEV_ALLOW_ALL pasa por evaluador) |
 | DEFAULT_VOCAB inmutable | INVARIANTS.md:34 | NO | Los set internos son mutables (AUD-08) |
-| Kernel no importa fuera | tests/kernel/test_no_kernel_imports_domains.py | NO | policy/engine.py:73 importa infrastructure.tenancy (AUD-01) |
+| Kernel no importa fuera | tests/kernel/test_no_kernel_imports_domains.py | OK | AUD-01 resuelto (tenant_resolver inyectable + test robusto) |
 
 ## 2. Cognition
 

@@ -1,11 +1,11 @@
-"""Configuración global de la suite.
+"""ConfiguraciÃ³n global de la suite.
 
 Invariantes de test:
 - Los tests NUNCA tocan APIs reales. Aunque .env traiga GOOGLE_REAL=true
-  con credenciales válidas, la suite fuerza el camino stub/mock determinista.
+  con credenciales vÃ¡lidas, la suite fuerza el camino stub/mock determinista.
   Un test que quiera ejercitar el camino real (p.ej. test_google_real_routing)
-  debe activar settings.google_real de forma explícita en su propio fixture,
-  que corre DESPUÉS de este autouse.
+  debe activar settings.google_real de forma explÃ­cita en su propio fixture,
+  que corre DESPUÃ‰S de este autouse.
 """
 from __future__ import annotations
 
@@ -47,3 +47,10 @@ def _restore_entity_registry():
     yield
     ENTITY_TYPE_REGISTRY.clear()
     ENTITY_TYPE_REGISTRY.update(snapshot)
+
+# --- Excluir tests/manual/ de la coleccion ---
+# tests/manual/test_google_real.py reemplaza sys.stdout/sys.stderr en el
+# momento del import, lo que rompe el capturador de pytest en Windows
+# ('ValueError: I/O operation on closed file'). Es un script manual, no
+# un test automatico: se excluye de la coleccion.
+collect_ignore_glob = ['manual/*']
