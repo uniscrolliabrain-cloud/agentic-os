@@ -64,3 +64,16 @@
 ## 5. Conclusión
 - El esquema `Event` ya soporta trazabilidad → no hay que tocar el modelo sino **propagar el id** en 5 puntos: `_start_orchestration_task`, `_try_execute`, `handle_user_message`, `handle_pipeline`, `Executor.execute/_audit`.
 - `command_id` (como `mission_id`) debería añadirse a `Event` en una fase de hardening posterior (kerno bugfix), pues la trazabilidad Mission→EventLog queda rota sin él.
+
+---
+
+## Estado de resolucion (actualizado 2026-09-18)
+
+- **GAP 1** (correlation_id se pierde en Executor._audit): RESUELTO.
+  Verificado en executor.py: la firma de execute() incluye
+  correlation_id: Optional[str] (linea 82) y _audit() lo propaga al
+  evento (linea 95). El Executor actual lo mantiene end-to-end.
+
+- **Origen:** los GAPs de este audit describian la version de est.py
+  previa al hardening. Se resuelven en los commits 26881e4 (audit
+  fail-closed) y 8bde3a (AUD-03/13/16).

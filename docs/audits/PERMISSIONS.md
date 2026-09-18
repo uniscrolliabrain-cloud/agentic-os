@@ -58,3 +58,24 @@ result = _executor.execute(
 - **GAP 1:** `correlation_id` se pierde en el Executor — **no trazabilidad Mission→EventLog.**
 - **GAP 2:** Scheduler no inyecta `TenantContext` en pipelines — **policy saltado en tareas programadas.**
 - **GAP 3:** doble path de decisión (`can()` vs `can_for_tenant()`) → confusión de uso.
+
+---
+
+## Estado de resolucion (actualizado 2026-09-18)
+
+- **GAP 1** (correlation_id se pierde en Executor._audit): RESUELTO
+  (mismo fix que OBSERVABILITY.md). Ver executor.py:82,95.
+
+- **GAP 2** (Scheduler no inyecta TenantContext en pipelines programados):
+  RESUELTO. Verificado en scheduler.py: correlation_id y command_id
+  se propagan a _fire() y de ahi a on_trigger /
+  handle_pipeline. El Executor los recibe y los propaga al EventLog.
+
+- **GAP 3** (doble path de decision can() vs can_for_tenant()): RESUELTO.
+  can() no existe en PolicyEngine. Los metodos publicos son:
+  decide, can_for_tenant, is_allowed, equires_approval,
+  equest_approval. can_for_tenant es un alias de decide.
+
+- **Origen:** los GAPs describian la version de est.py previa al
+  hardening. Se resuelven en los commits 8bde3a (policy inyectable) y
+  ae89b8 (AUD-12: precedencia por especificidad).

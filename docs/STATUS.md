@@ -177,3 +177,37 @@ El objetivo del ciclo E es reducir la brecha marcando cada fichero aspiracional 
 1. Se actualiza 1 vez por ciclo de hardening (no en cada PR).
 2. Cuando un fichero pase de aspiracional a vinculante, moverlo de tabla.
 3. Si el porcentaje cambia +/- 10 puntos, actualizar la fila.
+
+## Deuda con decision tomada
+
+Elementos de auditoria que NO se van a resolver con codigo: se cierran
+con una decision documentada.
+
+### AUD-15 — Action / ExecutionResult duplicados
+
+**Situacion:** 2 definiciones de Action y 2 de ExecutionResult:
+
+- contracts/execution.py → estrictas (canonicas).
+- execution/action.py y execution/result.py → laxas (legacy).
+
+**Quien las usa:** las estrictas SOLO las usan 2 tests
+(	ests/kernel/test_contracts.py, 	ests/kernel/test_execution_contracts.py).
+Las laxas las usa executor.py.
+
+**Decision:** NO unificar hoy. El refactor del Executor para usar
+ActionParams tipado y devolver ExecutionResult con output_keys
+(no output: dict) toca ~15 sitios y no aporta funcionalidad nueva.
+Se documenta la co-existencia con docstrings claros en los 3 ficheros.
+
+**Reabrir si:** se necesita auditabilidad fina de salidas del Executor
+(no filtrar valores) o se desea eliminar la clase laxa por completitud.
+
+### GAPs de los audits internos (Observability, Permissions)
+
+Los 3 GAPs documentados en docs/audits/OBSERVABILITY.md y
+docs/audits/PERMISSIONS.md (correlation_id, TenantContext en scheduler,
+doble path de decision) fueron resueltos por el hardening de los commits
+26881e4, 8bde3a y ae89b8. Los audits se actualizan con la marca
+de RESUELTO.
+
+La seccion "Cobertura spec vs realidad" refleja el estado actual.
