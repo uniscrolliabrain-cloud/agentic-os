@@ -46,7 +46,7 @@
 | 08 | 9 familias vacias (DOCUMENTS, CREATIVE, ...) | No existen | docs/spec/08 + cognition/agents/microactions/ | HUECO_SPEC |
 | 02 | TaxonomyFamily (15 + futuras) | taxonomy.py (C2c) | kernel/ontology/taxonomy.py | OK |
 | 08 | Microacciones de negocio como stub | No definidas | cognition/agents/microactions/ | HUECO_SPEC |
-| 09 | 5 pipelines de sistema | No existen | orchestration/pipelines/catalog/ | FALTA |
+| 09 | 5 pipelines de sistema | pendiente C4 | orchestration/pipelines/catalog/ | FALTA |
 | 09 | Referencias rotas a microacciones inexistentes | research.extract_company_data, sales.score_lead, ... | docs/spec/09 | CONTRADICCION |
 | 07 | MicroActionSchema | cognition/agents/schemas.py | OK | OK |
 | 07 | PipelineSchema | cognition/agents/schemas.py | OK | OK |
