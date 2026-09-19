@@ -312,53 +312,106 @@ RESPUESTA: global + overrides. El tenant cambia prompt/tono/restricciones, NO la
 LEY: `cognition/skills/schema.py`.
 CONSECUENCIA: la estructura del skill es invariante; los overrides son cosmeticos/comportamentales, no estructurales.
 
-## D22 - (pendiente confirmar contenido completo - placeholder)
+## D22 - Model router: proveedores free-tier
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo. Esta entrada se refina si el usuario lo pide.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+RESPUESTA: 5 proveedores, en este orden de preferencia:
+- Gemini 3.6 Flash (Google, free tier generoso).
+- Groq (Llama 3.3 70B, free tier rapido).
+- XAI / Grok (xAI, OpenAI-compatible).
+- OpenRouter (gateway a multiples modelos).
+- Hugging Face Inference API (fallback).
 
-## D24 - (pendiente confirmar contenido completo - placeholder)
+Enrutado por preferred_model > cost_hint > orden natural. Fallback en
+cascada con cache en memoria de prompts identicos.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+LEY: `interfaces/llm/router.py` (Bloque 0, ya implementado).
 
-## D25 - (pendiente confirmar contenido completo - placeholder)
+CONSECUENCIA: los modelos concretos se cambian por env var
+(`GEMINI_MODEL`, `GROQ_MODEL`, etc.) sin tocar codigo.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+## D24 - Worker de misiones
 
-## D26 - (pendiente confirmar contenido completo - placeholder)
+RESPUESTA: asyncio para misiones (concurrencia por tenant).
+APScheduler para schedules declarados por tenant. Temporal on/off
+para production.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+LEY: `orchestration/orchestrator.py` + `orchestration/scheduler.py`
+(Bloque 7).
 
-## D27 - (pendiente confirmar contenido completo - placeholder)
+CONSECUENCIA: sin Temporal, las misiones corren en el mismo proceso.
+Cuando se active Temporal, el contrato no cambia.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+## D25 - Embeddings para memoria
 
-## D28 - (pendiente confirmar contenido completo - placeholder)
+RESPUESTA: local con `sentence-transformers`. Si el rendimiento no
+llega en produccion, se cambia a API con on/off por env var.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+LEY: `cognition/memory/` + `interfaces/llm/composer.py`
+(Bloques 3 y 6).
 
-## D29 - (pendiente confirmar contenido completo - placeholder)
+CONSECUENCIA: privacidad por defecto; sin llamadas externas para
+embeddings.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+## D26 - Web Search proveedor
 
-## D30 - (pendiente confirmar contenido completo - placeholder)
+RESPUESTA: Brave Search API (free tier) como principal. Fallback a
+DuckDuckGo (sin API key) cuando se agota la cuota.
 
-RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
-LEY: (a completar).
-CONSECUENCIA: (a completar).
+LEY: `connectors/providers/catalog_ai_web.py` + tool `web_search`
+(Bloque 11).
+
+CONSECUENCIA: el conector se declara on/off; sin credenciales
+degrada a DuckDuckGo.
+
+## D27 - Los 2 tenants del vertical
+
+RESPUESTA:
+- `bor-agencia` (ya existe, dominio agencia, caso real).
+- `clinic-test` (nuevo, dominio clinic, para probar compilador).
+
+LEY: `data/tenants/` + `domains/agencia/` + `domains/clinic/`
+(Bloque 9).
+
+CONSECUENCIA: el vertical slice usa estos 2. Cualquier otro tenant
+es extra.
+
+## D28 - Observabilidad
+
+RESPUESTA:
+- Logs: estructurados JSON con `structlog` a stdout.
+- Metricas: Prometheus + Grafana Cloud free tier.
+- Tracing: OpenTelemetry SDK + Jaeger local.
+
+LEY: `infrastructure/telemetry/` (Bloque 12).
+
+CONSECUENCIA: todo gratis por defecto; migrable a stack de pago sin
+cambiar contratos.
+
+## D29 - Laia: polling o subscribe
+
+RESPUESTA: read-model persistido (JSON o Redis) + Laia hace polling
+ligero cada N segundos. WebSocket en production.
+
+LEY: `interfaces/llm/laia.py` (Bloque 0c).
+
+CONSECUENCIA: sin WebSocket, la UI de misiones actualiza por polling.
+Cuando se active WebSocket, mismo read-model.
+
+## D30 - SchemaAssembler
+
+RESPUESTA:
+1. LLM llamado con `response_schema` (structured output nativo de
+   Gemini / Groq / OpenRouter).
+2. Si el proveedor no soporta structured output: prompt + parseo
+   JSON.
+3. Output pasa por `pydantic.validate_json()` contra el schema
+   declarado.
+4. Si no valida: 1 reintento con feedback del error.
+5. Si sigue sin validar: `ValidationFailed`.
+
+LEY: `orchestration/orchestrator.py` (Bloque 7).
+
+CONSECUENCIA: nunca se propaga un output que no cumple schema.
 
 ## D31 - Que pasa si no existe skill
 
