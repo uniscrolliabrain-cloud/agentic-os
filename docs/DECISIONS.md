@@ -290,3 +290,132 @@ FIRMADA: 2026-09-18.
 3. Si algo cambia, se abre Dxx+1 y Dxx se marca SUPERSEDED.
 4. Las decisiones nuevas van al final, no se reordenan.
 
+
+---
+
+## D19 - Estructura de un Skill
+
+RESPUESTA: prompt + few-shots + input/output schemas + steps + tool_id + validacion + postcond + tenant_overrides + department + cost_hint.
+Prompt como string con `{variable}`. Few-shots como lista de dicts `{input, output}`.
+LEY: `cognition/skills/schema.py` (a crear en Bloque 1).
+CONSECUENCIA: SkillSchema es el contrato del skill; el LLM no lo modifica en runtime.
+
+## D20 - Idioma de prompts
+
+RESPUESTA: base en ingles, overrides por tenant en su idioma.
+LEY: `cognition/skills/schema.py` + `interfaces/llm/composer.py` (Bloque 3).
+CONSECUENCIA: el prompt base es estable; la localizacion vive en tenant_overrides.
+
+## D21 - Versionado de skills
+
+RESPUESTA: global + overrides. El tenant cambia prompt/tono/restricciones, NO la estructura de pasos.
+LEY: `cognition/skills/schema.py`.
+CONSECUENCIA: la estructura del skill es invariante; los overrides son cosmeticos/comportamentales, no estructurales.
+
+## D22 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo. Esta entrada se refina si el usuario lo pide.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D24 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D25 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D26 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D27 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D28 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D29 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D30 - (pendiente confirmar contenido completo - placeholder)
+
+RESPUESTA: ver BUILD_PLAN.md seccion 5 para contenido completo.
+LEY: (a completar).
+CONSECUENCIA: (a completar).
+
+## D31 - Que pasa si no existe skill
+
+RESPUESTA: router devuelve `NoSkillFound`. Laia lo comunica. No se inventa skill en runtime.
+LEY: `orchestration/interpreter.py` (Bloque 4).
+CONSECUENCIA: fail-closed: sin skill declarada, no hay ejecucion.
+
+## D32 - Laia propone Intent?
+
+RESPUESTA: si, solo via `Intent`. Laia nunca ejecuta.
+LEY: `interfaces/llm/laia.py` (Bloque 0c).
+CONSECUENCIA: Laia solo propone; Policy + Executor deciden.
+
+## D33 - Acumulacion de intents -> task list
+
+RESPUESTA: IntentQueue en `data/tenants/<tid>/intents.jsonl`. IntentAggregator agrupa por afinidad. TaskScheduler consume planes.
+LEY: `orchestration/orchestrator.py` (Bloque 7).
+CONSECUENCIA: intents persistidos; el scheduler consume planes agregados.
+
+## D34 - Foto como trigger
+
+RESPUESTA: `photo_received` -> Vision LLM (Gemini Vision o GPT-4V) -> texto + intent -> mismo validador.
+LEY: `interfaces/llm/` + `execution/tools/` (Bloques 7 + 11).
+CONSECUENCIA: vision es un trigger mas; mismo contrato de Intent.
+
+## D35 - Como Laia ve el runtime
+
+RESPUESTA: read-model `TenantRuntimeView` con misiones activas, aprobaciones pendientes, ultimos eventos, metricas resumidas.
+LEY: `interfaces/llm/laia.py` (Bloque 0c).
+CONSECUENCIA: Laia lee; no escribe estado de runtime.
+
+## D36 - Modelo preferido por agente vs skill
+
+RESPUESTA: 1) Paso declara `preferred_model` -> ese. 2) Skill declara `preferred_model` -> ese. 3) Agente declara `preferred_model` -> ese. 4) ModelRouter decide por `cost_hint` y disponibilidad.
+LEY: `interfaces/llm/router.py` (Bloque 0).
+CONSECUENCIA: jerarquia determinista; el router solo decide lo no declarado.
+
+## D37 - Skills como codigo o como datos
+
+RESPUESTA: `.py` para el repo. YAML solo si un tenant necesita declarar skills sin tocar codigo.
+LEY: `cognition/skills/` (Bloque 1).
+CONSECUENCIA: skills del repo en Python; YAML es via de escape para tenants.
+
+## D38 - Como se testea una skill
+
+RESPUESTA: test unitario input + output + pasos `tool` con mocks + pasos `llm` con stub determinista + golden test opcional `@slow`.
+LEY: `tests/skills/` (Bloque 1).
+CONSECUENCIA: toda skill nueva exige los 4 niveles de test.
+
+## D39 - Como se documenta una skill
+
+RESPUESTA: docstring en `.py` + entrada autogenerada en `docs/SKILLS_LIBRARY.md`.
+LEY: `docs/SKILLS_LIBRARY.md` (Bloque 1).
+CONSECUENCIA: la biblioteca se autogenera; no se escribe a mano.
+
+## D40 - Que pasa con las 65 microacciones de spec 08
+
+RESPUESTA: se convierten en skills gradualmente. Las no implementadas llevan flag `SKILL: false`.
+LEY: `cognition/skills/` (Bloque 1).
+CONSECUENCIA: migracion incremental; sin big-bang.
